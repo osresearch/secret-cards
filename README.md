@@ -1,0 +1,177 @@
+Extended SRA
+===
+
+Goals of the original SRA:
+
+* Neither player can influence the order of the cards
+
+* Neither player can known what is in the other player's hand
+
+* After the game the players can prove the cards in their hands
+
+* After the game the players can prove that the deck was complete
+
+The drawback of the last steps is that the each player learns
+the contents of the others' hand.  This is problematic for poker, since
+when a player folds only the visible cards are known and they have no
+obligation to reveal the remaining or discarded cards to the other players
+(and vice versa).
+
+Additionally, during play there are a few additional steps:
+it is desirable for the players to be able to recognize if the cards are the
+legitimate cards ones or if the player is cheating by claiming to reveal a different card.
+
+When a player discards a card, they must not be able to reuse the
+card later, but the other player should not learn anything about the discarded card.
+
+Lastly, when a card is revealed by either player, it is important for
+the other player to know that the card is one that has actually been dealt.
+
+Extended SRA allows players to really play poker with these extensions.
+
+
+Setup
+===
+
+Two players, Alice and Bob, agree on the number of cards and the contents
+that they should contain. In this example they will be the four-byte integers
+0-51.
+
+SRA
+---
+They also agree on a base prime $p$, such as 2^1279 - 1, that will be used
+for the modulus.
+
+Both players generate a random secret value that is relatively prime to the
+modulus - 1, as well compute the modular inverse of their secret values.
+These are $K_a$, $K'_a$, $K_b$ and $K'_b$.  They keep these values secret
+and will use them in the usual SRA method for encrypting and decrypting cards:
+
+$$c_a = E(K_a, m) = m^{K_a} % p$$
+$$m= D(K_a, c_a) = {c_a}^{K'_a} % p = m^{K_a K'_a} % p = m$$
+
+Since they agree on the modulus $p$, this has the commutative property that:
+
+$$c = E(K_a, E(K_b, m)) = E(K_b, E(K_a, m))$$
+
+and also that decryption can be applied in either order:
+
+$$c = E(K_a, E(K_b, m)) = E(K_b, E(K_a, m))$$
+$$m = D(K_b, D(K_a, c)) = D(K_a, D(K_b, c))$$
+
+Intuitively, $K_a$ and $K_b$ are like two locks that can be added and removed
+in either order.  This property gives rise to a simple "Draw a Card" mechanic by
+which two parties can exchange a single message from a set, without revealing
+the entire set.
+
+Alice can encrypt messages with $K_a$ and send them to Bob,
+who can shuffle them and encrypt with $K_b$, then send this reordering back to
+Alice.  She can now decrypt all of them with $K'_a$, but does not learn of
+Bob's shuffling. She can select a message at random to send to Bob, who can
+decrypt it with $K'_b$ and learn that one message, but none of the others.
+
+Shuffling
+---
+Alice generate a random nonce $n_i$ for each card $m_i$, computes $c_i = E(K_a, n_i || m_i)$ for each card
+as well as the cryptographically secure hash $H(n_i || m_i)$ to commit to the values of the cards.
+She shuffles both the encrypted and hashed values with ordering $S_1$ and sends this to Bob.
+
+Since Bob wants to be sure that the deck is complete, they perform
+a cut-and-choose style proof.  Alice sends N versions of the deck
+with different $K_a$ and nonces $n_i$. Bob selects N-1 of them to
+be unblinded so Alice reveals her key $K'_a$ for those decks and Bob
+is able to decrypt them and verifies that all of them were complete.
+He now has faith with probability $1-2^{-n}$ that Alice is not cheating
+and that the last deck is complete.
+
+Bob creates a per-card nonce $n'_i$ and adds another set of commitment hashes
+$H(n'_i || H(n_i || c_i))$ to the surving deck.
+
+He then shuffles the deck and both Alice and his commitment hashes with $S_2$
+encrypts each of the cards with his key:
+
+$$E(K_b, c_i) = E(K_b, E(K_a, n_i || m_i))$$
+
+He sends this re-order and additionally encrypted deck back to Alice
+along with his commitment hashes.
+Bob does not know the original ordering of the cards, nor is he able
+to deduce their values from the hashes since the function $H()$ is
+computationally infeasible to reverse.
+
+Alice applies her decryption operation to the deck that has been reordered
+by Bob, which removes her encryption and leaves only Bob's:
+
+$$D(K_a, E(K_b, c_i)) == D(K_a, E(K_b, E(K_a, n_i||m_i))) = E(K_b, n_i||m_i)$$
+
+The key observation from the original SRA paper is that Alice does not learn
+the ordering of the cards, so she does not know Bob's secret $K_b$ nor its modular
+inverse $K'_b$.
+
+
+Dealing
+---
+The dealing process is asymetic due to the different pieces that Alice and Bob have.
+The card dealing is deterministic and each party knows how many cards have been
+played.
+
+Bob draws a card:
+* Alice selects an unused card $j$ from the deck and sends it to Bob: $E(K_b, n_j || c_j)$
+* She does not know what it contains, since it is encrypted with Bob's key $K_b$.
+* Bob decrypts the card $n_j || c_j = D(K_b, E(K_b, n_j || c_j))$
+* He verifies that $H(n_j || c_j)$$ is on the original card list and not yet dealt to either player
+* He has already committed to this card with nonce $H(n'_j || H(n_j || c_j))$
+* Alice knows which commitment hash goes with this card, but
+* Alice does not know which card Bob has received since she does not know the mapping $S2$
+* since Bob's commitment hash does not reveal anything about the card
+
+Alice draws a card:
+* Alice selects an unused card $j$ from the deck and commits to it by sending Bob's commitment hash on it
+* Bob looks up his commitment and replied with the corresponding card from Alice's original deck, which was
+encrypted with her key $K_a$, as well as sending her $n'_j$.
+* Alice decrypts the card with $K'_a$: $n_j || c_j = D(K_a, E(K_a, n_j||c_j))$
+* Alice doesn't know the mapping of the card commitments since they are encrypted with Bob's key.
+* Bob does not learn which card Alice has received since the cards are encrypted with Alice's key
+* Bob knows that Alice has requested a valid card and that it has not been dealt yet
+* Alice knows that she has received a valid card since the nonce $n_j$ matches her list
+* Alice knows that she has received a valid commitment since the hash $H(n'_j || H(n_j||c_j))$ matches one of Bob's commitments
+
+
+Revealing cards
+---
+
+When Alice "turns card $c_i$ over" to reveal it, she publishes $n_i || c_i$.
+* Bob can validate that $H(n_i || c_i)$ is in the original card commitments, so this is a legitimate card,
+and that is one that Alice has committed to.
+* Alice can't fake a card since $H(n_i || c_i)$ must appear in the initial card list and she
+must have committed to the hash during a dealing phase.
+* Until Alice reveals $n_i$, however, Bob is unable to know what that commitment represented.
+* Bob knows when this card was dealt, but this does not reveal any additional cards in Alice's hand.
+
+For Bob to reveal a card $c_i$, he publishes his nonce $n'_i$ as well as the card $n_i || c_i$.
+* Alice is able to validate that $n_i$ is the correct nonce for $c_i$ since she generated it
+* Alice computes the hash $H(n'_i || H(n_i || c_i))$ and both matches Bob's expected commitment for the card,
+as well as ensures that it was one that Bob was dealt.
+* Bob can't generate a fake card since he does not know the nonces, while Alice knows the $n_i || c_i$ for every valid card.
+* Alice learns when Bob received this card, but since $n'_i$ is unique to
+that card, Alice does not learn any information about other cards to which Bob has committed.
+
+
+Discarding cards
+---
+
+Alice or Bob can declare that any of their commitments have been discarded, which
+prevents them from using them later when they reveal some of their cards.
+* Bob knows that Alice's discarded commitments are valid since they match the ones in the original list
+(even though he does not know which cards they represent).
+* Alice knows that Bob's discarded commitments are valid since they match the ones in the shuffled
+list that he returned (even though she does not know which cards they represent)
+
+
+Limitations
+===
+
+The major limitation is that the players know on which turn the other players received
+cards.  This leaks some information about the players' decision making, such as the time
+between receiving a card and discarding it.
+
+
