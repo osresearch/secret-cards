@@ -17,15 +17,13 @@ class SRA
 
 		let phi_p = this.p - 1n;
 		let dec_digits = (""+ phi_p).length;
-		let num_bytes = dec_digits / 2;
-		let bytes = new Uint8Array(num_bytes);
+		let bits = dec_digits * 3;
 		
 		while(true)
 		{
 			// choose a random encryption key and check to see if it
 			// is relatively prime to the modulus.
-			window.crypto.getRandomValues(bytes);
-			let k = this.array2int(bytes);
+			let k = randomBigint(bits);
 			console.log("trying", k);
 
 			// gcd(k,phi_p) == 1 means that they are relatively prime
@@ -42,51 +40,6 @@ class SRA
 			this.d = inv;
 			break;
 		} 
-	}
-
-	/*
-	 * Convert a string or byte array into a BigInt
-	 */
-	array2int(bytes)
-	{
-		let hex;
-
-		if (typeof(bytes) == "string")
-		{
-			hex = bytes 
-			.split('')
-			.map( c => ('00' + c.charCodeAt(0).toString(16)).slice(-2) )
-			.join('');
-		} else
-		if (typeof(bytes) == "object")
-		{
-			hex = bytes 
-			.map( c => ('00' + c.toString(16)).slice(-2) )
-			.join('');
-		} else
-		{
-			console.log('ERROR', bytes);
-		}
-
-		let bi = BigInt("0x" + hex);
-		//console.log(bytes, bi);
-		return bi;
-	}
-
-	/*
-	 * Convert a BigInt to a binary string
-	 */
-	int2array(m)
-	{
-		let r = [];
-		while(m)
-		{
-			let c = Number(m & 0xFFn);
-			r.push(String.fromCharCode(c));
-			m >>= 8n;
-		}
-
-		return r.reverse().join('');
 	}
 
 	/*
@@ -146,9 +99,9 @@ class SRA
 	 */
 	encrypt(m)
 	{
-		let mi = this.array2int(m);
+		let mi = array2bigint(m);
 		let ci = this.modExp(mi, this.d, this.p);
-		return this.int2array(ci);
+		return bigint2array(ci);
 	}
 
 	/*
@@ -156,8 +109,8 @@ class SRA
 	 */
 	decrypt(c)
 	{
-		let ci = this.array2int(c);
+		let ci = array2bigint(c);
 		let mi = this.modExp(ci, this.e, this.p);
-		return this.int2array(mi);
+		return bigint2array(mi);
 	}
 }
