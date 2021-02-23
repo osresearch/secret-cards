@@ -130,7 +130,7 @@ class DeckDealer
 			player_nonce: player_nonce,
 		});
 
-		console.log(this.hand.map(c => c.card));
+		console.log("dealer hand", this.hand.map(c => c.card));
 		return card;
 	}
 
