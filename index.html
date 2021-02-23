@@ -6,6 +6,67 @@
 <script src="cards.js"></script>
 </head>
 <body>
-Empty
+<script>
+let cards = "🂡🂢🂣🂤🂥🂦🂧🂨🂩🂪🂫🂬🂭🂮🂱🂲🂳🂴🂵🂶🂷🂸🂹🂺🂻🂼🂽🂾🃁🃂🃃🃄🃅🃆🃇🃈🃉🃊🃋🃌🃍🃎🃑🃒🃓🃔🃕🃖🃗🃘🃙🃚🃛🃜🃝🃞";
+</script>
+
+<form id="ui">
+<input type="button" value="Shuffle" onclick="
+	console.log('Creating dealer');
+	d = new DeckDealer(52);
+	console.log('Creating player');
+	p = new DeckPlayer(d.export());
+	console.log('Importing shuffled deck');
+	d.import(p.export());
+
+	document.querySelector('#player').innerHTML='';
+	document.querySelector('#dealer').innerHTML='';
+"/>
+
+<input type="button" value="Dealer Draw" onclick="
+	let new_card = d.receive(p.deal());
+	if (new_card == null)
+		return;
+	new_card = Number(new_card);
+	let suite = Math.floor(new_card / 12);
+	let value = new_card % 12;
+	let card = document.createElement('div');
+	card.setAttribute('id', 'dealer-' + new_card);
+	if (suite == 1 || suite == 2)
+		card.setAttribute('style', 'color:red');
+	else
+		card.setAttribute('style', 'color:black');
+	card.innerHTML = cards.substr(new_card*2, 2); //suite + '-' + value;
+	document.querySelector('#dealer').appendChild(card);
+" />
+<input type="button" value="Player Draw" onclick="
+	let new_card = p.receive(d.deal());
+	if (new_card == null)
+		return;
+	new_card = Number(new_card);
+	let suite = Math.floor(new_card / 12);
+	let value = new_card % 12;
+	let card = document.createElement('div');
+	card.setAttribute('id', 'player-' + new_card);
+	if (suite == 1 || suite == 2)
+		card.setAttribute('style', 'color:red');
+	else
+		card.setAttribute('style', 'color:black');
+	card.innerHTML = cards.substr(new_card*2, 2); //suite + '-' + value;
+	document.querySelector('#player').appendChild(card);
+" />
+</form>
+
+<table>
+<tr>
+<td>
+<div id="dealer" style="font-size:64px"></div>
+</td>
+<td>
+<div id="player" style="font-size:64px"></div>
+</td>
+</tr>
+</table>
+
 </body>
 </html>
