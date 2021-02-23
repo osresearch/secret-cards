@@ -124,14 +124,14 @@ hashes correspond to which cards.
 
 Dealing
 ---
-The dealing process is asymetic due to the different pieces that Alice and Bob have.
+The dealing process is slightly asymetic due to the different pieces that Alice and Bob have.
 Each party knows how many cards have been played. Alice can choose to go through the
 deck in order for dealing, or she can select randomly from it.
 
 Bob draws a card:
 * Alice selects an unused card $j$ from the deck and sends it to Bob: $E(K_b, n_j || c_j)$
 * She does not know what it contains, since it is encrypted with Bob's key $K_b$.
-* She does now that Bob committed to this card with $H(n'_j || H(n_j || c_j))$
+* She does know that Bob committed to this card with $H(n'_j || H(n_j || c_j))$
 * Bob decrypts the card $n_j || c_j = D(K_b, E(K_b, n_j || c_j))$
 * He verifies that $H(n_j || c_j)$$ is on the original card list and not yet dealt to either player
 * Alice knows which commitment hash goes with this card, but
@@ -139,30 +139,32 @@ Bob draws a card:
 * since Bob's commitment hash does not reveal anything about the card
 
 Alice draws a card:
-* Alice selects an unused card $j$ from the deck and commits to it by sending Bob's commitment hash on it
-* Bob looks up his commitment and replied with the corresponding card from Alice's original deck, which was
-encrypted with her key $K_a$, as well as sending her $n'_j$.
+* Bob selects an unused card $j$ from the deck and sends Alice's version of it plus his nonce to her: $E(K_a, n_j||c_j)$ and $n'_j$.
 * Alice decrypts the card with $K'_a$: $n_j || c_j = D(K_a, E(K_a, n_j||c_j))$
-* Alice doesn't know the mapping of the card commitments since they are encrypted with Bob's key.
-* Bob does not learn which card Alice has received since the cards are encrypted with Alice's key
-* Bob knows that Alice has requested a valid card and that it has not been dealt yet
 * Alice knows that she has received a valid card since the nonce $n_j$ matches her list
+* Alice computes Bob's commitment hash $H(n'_j || H(n_j||c_j)$ and verifies that it is in the list.
+* Alice marks this card as dealt.
+* Alice doesn't learn anything about Bob's shuffle, other than this one index mapping.
+* Bob does not learn which card Alice has received since the cards are encrypted with Alice's key
 * Alice knows that she has received a valid commitment since the hash $H(n'_j || H(n_j||c_j))$ matches Bob's commitment on this card
+* Bob can't send a fake card since he doesn't know Alice's nonce $n_j$
+* Bob can't send a fake commitment nonce $n'_j$ since he doesn't know the card contents
 
 
 Revealing cards
 ---
 
-When Alice "turns card $c_i$ over" to reveal it, she publishes $n_i || c_i$.
+When Alice "turns card $c_i$ over" to reveal it, she publishes $n_i$
 * Bob can validate that $H(n_i || c_i)$ is in the original card commitments, so this is a legitimate card,
 * Alice can try to cheat since she knows the full set of $n_i||c_i$, except that Bob knows that Alice
 only holds the cards that she has committed to, so he can detect the attempt to pull out a hole card.
+* Bob can verify with is nonce $n'_i$ that this card was dealt to Alice (and when, unfortunately), but this does not reveal any additional cards in Alice's hand.
 * Alice can't play fake a card since $H(n_i || c_i)$ must appear in the initial card list and she
 must have committed to the hash during a dealing phase.
 * Until Alice reveals $n_i$, however, Bob is unable to know what that commitment represented.
-* Bob knows when this card was dealt, but this does not reveal any additional cards in Alice's hand.
 
-For Bob to reveal a card $c_i$, he publishes his nonce $n'_i$ as well as the card $n_i || c_i$.
+For Bob to reveal a card $c_i$, he publishes his nonce $n'_i$ as well as the Alice's nonce $n_i' that he learned
+when the card was dealt to him.
 * Alice is able to validate that $n_i$ is the correct nonce for $c_i$ since she generated it
 * Alice computes the hash $H(n'_i || H(n_i || c_i))$ and both matches Bob's expected commitment for the card,
 as well as ensures that it was one that Bob was dealt.
