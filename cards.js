@@ -89,33 +89,45 @@ class DeckDealer
 	/*
 	 * Receive a card from the player, which requires both an encrypted card and the player's nonce.
 	 */
-	receive(encrypted_card, player_nonce)
+	receive(player_message)
 	{
-		let decrypted_card = this.sra.decrypt(encrypted_card);
-		let dealer_nonce = decrypted_card >> 128n;
-		let card = decrypted_card & 0xFFFFFFFFFFFFFFFFn;
+		if (!player_message)
+			return null;
 
-		console.log("dealer received card", card, bigint2hex(dealer_nonce, 16));
+		const encrypted_card = player_message.card;
+		const player_nonce = player_message.nonce;
+		const decrypted_card = this.sra.decrypt(encrypted_card);
+		const dealer_nonce = decrypted_card >> 128n;
+		const card = decrypted_card & 0xFFFFFFFFFFFFFFFFn;
 
 		// verify that this card matches this nonce in the dealer deck
-		let dealer_card = this.deck.filter(c => c.card == card && c.dealer_nonce == dealer_nonce);
+		const dealer_card = this.deck.filter(c => c.card == card && c.dealer_nonce == dealer_nonce);
 		if (dealer_card.length != 1)
-			throw "fake card! (dealer_nonce not found)";
+			throw card + " fake card! (dealer_nonce not found)";
 
 		// compute the player's commitment hash
-		let player_hash = sha256(player_nonce << 256n | dealer_card[0].dealer_hash, 64);
-		console.log("player_hash", player_hash, dealer_card[0]);
-		let player_card = this.player_deck.filter(c => c.player_hash == player_hash);
-		if (player_card.length != 1)
-			throw "fake nonce! (player_nonce not found)";
-		console.log(player_card);
+		const player_hash = sha256(player_nonce << 256n | dealer_card[0].dealer_hash, 64);
 
+		// find the player's commitment hash in the deck they sent
+		const player_card = this.player_deck.filter(c => c.player_hash == player_hash);
+		if (player_card.length != 1)
+			throw card + " fake nonce! (player_nonce not found)";
+
+		if (player_card[0].played)
+			throw card + " card already played!";
+
+		// this is a valid unplayed card,
+		// with a valid commitment hash from dealer and player
 		player_card[0].played = 1;
+
 		this.hand.push({
 			card: card,
 			dealer_nonce: dealer_nonce,
 			player_nonce: player_nonce,
 		});
+
+		console.log(this.hand.map(c => c.card));
+		return card;
 	}
 };
 
@@ -156,7 +168,7 @@ class DeckPlayer
 	 */
 	export()
 	{
-		let sra = this.sra;
+		const sra = this.sra;
 		return this.deck.map(function(card) { return {
 			encrypted: sra.encrypt(card.dealer_encrypted), // now both A and B
 			hash: card.player_hash,
@@ -168,35 +180,37 @@ class DeckPlayer
 	 */
 	receive(encrypted_card)
 	{
+		if (!encrypted_card)
+			return null;
+
 		// decrypt it so that we know the real card, which includes both the card id
 		// and the dealer's nonce for this card.
-		let decrypted = this.sra.decrypt(encrypted_card);
-		let dealer_nonce = decrypted >> 128n;
-		let card = decrypted & 0xFFFFFFFFFFFFFFFFn;
+		const decrypted = this.sra.decrypt(encrypted_card);
+		const dealer_nonce = decrypted >> 128n;
+		const card = decrypted & 0xFFFFFFFFFFFFFFFFn;
 
 		// find the hash in the dealer's commitment list to mark as played
-		let dealer_hash = sha256(decrypted, 64);
-		console.log("player received", bigint2hex(decrypted, 32), bigint2hex(dealer_hash, 32));
+		const dealer_hash = sha256(decrypted, 64);
+		//console.log("player received", bigint2hex(decrypted, 32), bigint2hex(dealer_hash, 32));
 
-		for(let player_card of this.deck)
-		{
-			if (player_card.dealer_hash != dealer_hash)
-				continue;
-			if (player_card.played)
-				throw "already played!";
+		const player_card = this.deck.filter(c => c.dealer_hash == dealer_hash);
+		if (player_card.length != 1)
+			throw card + " card not in dealer deck!";
 
-			player_card.played = true;
+		if (player_card[0].played)
+			throw card + " card already played!";
 
-			this.hand.push({
-				card: card,
-				dealer_nonce: dealer_nonce,
-				player_nonce: player_card.nonce,
-			});
+		player_card[0].played = true;
 
-			return true;
-		}
+		this.hand.push({
+			card: card,
+			dealer_nonce: dealer_nonce,
+			player_nonce: player_card[0].nonce,
+		});
 
-		throw "card not in deck!";
+		console.log("player hand", this.hand.map(c => c.card));
+
+		return card;
 	}
 
 	/*
@@ -209,10 +223,15 @@ class DeckPlayer
 		{
 			if (card.played)
 				continue;
+
 			card.played = true;
 			
-			console.log("player sends to dealer:", card);
-			return [ card.dealer_encrypted, card.player_nonce ]; // only A's encryption, player's nonce
+			//console.log("player sends to dealer:", card);
+
+			return {
+				card: card.dealer_encrypted, // only dealer can decrypt
+				nonce: card.player_nonce
+			};
 		}
 
 		// no cards left!
