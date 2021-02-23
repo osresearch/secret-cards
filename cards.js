@@ -1,176 +1,233 @@
 /*
- * Compute a^e % n with big integers
- * using the modular exponentiation so that it can be done
- * in (non-constant) log2 time.
- */
-function modExp(a, e, n)
-{
-	let r = 1n;
-	let x = a % n;
-
-	while (e != 0n)
-	{
-		if (e % 2n)
-			r = (r * x) % n;
-
-		e /= 2n;
-		x = (x * x) % n;
-	}
-
-	return r;
-}
-
-
-/*
- * Compute the extended Euler Greatest Common Denominator (GCD)
- * of two BigInt values.
- * Returns g, x, y such that a*x + b*y = g == gcd(a,b)
- */
-function egcd(a,b)
-{
-	let x = 0n;
-	let y = 1n;
-	let u = 1n;
-	let v = 0n;
-
-	while (a !== 0n)
-	{
-		const q = b / a;
-		const r = b % a;
-		const m = x - (u * q);
-		const n = y - (v * q);
-		b = a;
-		a = r;
-		x = u;
-		y = v;
-		u = m;
-		v = n;
-	}
-
-	return { g: b, x: x, y: y };
-}
-
-// default prime is the 15th Mersenne prime, which has 1279 bits and
-// which serves as a nothing up-my-sleeves number to provide similar
-// security to RSA2048.
-const default_prime = 2n ** 1279n - 1n;
-
-/*
- * Create an SRA encryption key for a given prime
- */
-function sra_key(p=0n)
-{
-	if (p === 0n)
-		p = default_prime;
-
-	let phi_p = p - 1n;
-	let dec_digits = (""+ phi_p).length;
-	let num_bytes = dec_digits / 2;
-	let bytes = new Uint8Array(num_bytes);
-	
-	while(true)
-	{
-		// choose a random encryption key and check to see if it
-		// is relatively prime to the modulus.
-		window.crypto.getRandomValues(bytes);
-		let k = BigInt("0x" + bytes
-			.map( c => ('00' + c.toString(16)).slice(-2) )
-			.join(''));
-		console.log("trying", k);
-
-		// gcd(k,phi_p) == 1 means that they are relatively prime
-		let g = egcd(k, phi_p);
-		if (g.g != 1n)
-			continue;
-
-		// ensure modular inverse is also positive
-		let inv = g.x;
-		if (inv < 0)
-			inv = inv + phi_p;
-
-		return {
-			k: k,
-			e: inv,
-			p: p,
-		};
-	} 
-}
-
-
-
-/*
- * Generates an RSA key pair with the WebCrypto API
- */
-function _rsaKey()
-{
-	return window.crypto.subtle.generateKey(
-		{
-			name: "RSASSA-PKCS1-v1_5",
-			modulusLength: 2048, //can be 1024, 2048, or 4096
-			publicExponent: new Uint8Array([0x01, 0x00, 0x01]),
-			hash: {name: "SHA-256"}, //can be "SHA-1", "SHA-256", "SHA-384", or "SHA-512"
-		},
-		true, //whether the key is extractable (i.e. can be used in exportKey)
-		["sign", "verify"] //can be any combination of "sign" and "verify"
-	).then(function(key){
-		//returns a keypair object
-		console.log(key);
-		console.log(key.publicKey);
-		console.log(key.privateKey);
-		return key;
-	}).catch(function(err){
-		console.error(err);
-	});
-}
-
-function decodeBigInt(s)
-{
-	return BigInt("0x" + bin2hex(b64decode(s)), 16);
-}
-
-function bin2hex(s)
-{
-	return s
-		.split('')
-		.map( c => ('00' + c.charCodeAt(0).toString(16)).slice(-2) )
-		.join('')
-		;
-}
-
-function b64decode(s)
-{
-	// convert the web-safe base64uri encoding to what is accepted
-	// by the builtin decoder.
-	const b = s.replaceAll("-","+").replaceAll("_","/");
-	return window.atob(b);
-}
-
-
-/*
- * Generate an RSA key pair as big ints.
+ * Mental Poker using Extended SRA.
  *
- * 
+ * Cards a 128 bits of dealer nonce and 128 bits of card ID (256 bits == 32 bytes)
+ * Dealer commits are sha256 hashes of 64 bytes of card data (MSB first)
+ * Player commits are 128 bit player nonce and 256 bits of dealer sha256 hash (MSB first)
  */
-async function rsaKey()
-{
-	const keys = await _rsaKey();
-	const priv  = await crypto.subtle.exportKey("jwk", keys.privateKey);
 
-	return {
-		e: decodeBigInt(priv.e),
-		d: decodeBigInt(priv.d),
-		n: decodeBigInt(priv.n),
-		p: decodeBigInt(priv.p),
-		q: decodeBigInt(priv.q),
-	};
+class DeckDealer
+{
+	constructor(size)
+	{
+		this.deck = [];
+		this.hand = [];
+		this.sra = new SRA();
+
+		for(let i = 0 ; i < size ; i++)
+		{
+			let nonce = randomBigint(128); // bits
+			let full_card = nonce << 128n | BigInt(i);
+
+			let card = {
+				card: BigInt(i),
+				dealer_nonce: nonce,
+				dealer_encrypted: this.sra.encrypt(full_card),
+				dealer_hash: sha256(full_card, 64), // bytes
+			};
+
+			this.deck[i] = card;
+		}
+
+		shuffle(this.deck);
+	}
+
+	/*
+	 * Output the shuffled deck for export to a player.
+	 * Player learns:
+	 *  - the set of cards encrypted with the dealer's key
+	 *  - the hashes of all of the cards
+	 */
+	export()
+	{
+		return this.deck.map(function(card) { return {
+			encrypted: card.dealer_encrypted,
+			hash: card.dealer_hash,
+		}});
+	}
+
+	/*
+	 * Import a deck from the player, decrypting with our key, leaving only the player's key in place.
+	 * There is nothing to merge yet, since we do not have a mapping of our nonces to theirs.
+	 * We don't have to shuffle it, but we do anyway.
+	 */
+	import(player_deck)
+	{
+		if (player_deck.length != this.deck.length)
+			throw "length mismatch";
+
+		// should verify uniqueness of each player commitment hash
+
+		let sra = this.sra;
+
+		this.player_deck = player_deck.map( function (player_card) { return {
+			played: false,
+			player_hash: player_card.hash,
+			player_encrypted: sra.decrypt(player_card.encrypted), // now only B
+		}});
+
+		shuffle(this.player_deck);
+	}
+
+	/*
+	 * Deal a card to the player.  Returns the card encrypted with only the player's key.
+	 */
+	deal()
+	{
+		for(let card of this.player_deck)
+		{
+			if (card.played)
+				continue;
+			card.played = true;
+			return card.player_encrypted;
+		}
+
+		// no cards left!
+		return null;
+	}
+
+	/*
+	 * Receive a card from the player, which requires both an encrypted card and the player's nonce.
+	 */
+	receive(encrypted_card, player_nonce)
+	{
+		let decrypted_card = this.sra.decrypt(encrypted_card);
+		let dealer_nonce = decrypted_card >> 128n;
+		let card = decrypted_card & 0xFFFFFFFFFFFFFFFFn;
+
+		console.log("dealer received card", card, bigint2hex(dealer_nonce, 16));
+
+		// verify that this card matches this nonce in the dealer deck
+		let dealer_card = this.deck.filter(c => c.card == card && c.dealer_nonce == dealer_nonce);
+		if (dealer_card.length != 1)
+			throw "fake card! (dealer_nonce not found)";
+
+		// compute the player's commitment hash
+		let player_hash = sha256(player_nonce << 256n | dealer_card[0].dealer_hash, 64);
+		console.log("player_hash", player_hash, dealer_card[0]);
+		let player_card = this.player_deck.filter(c => c.player_hash == player_hash);
+		if (player_card.length != 1)
+			throw "fake nonce! (player_nonce not found)";
+		console.log(player_card);
+
+		player_card[0].played = 1;
+		this.hand.push({
+			card: card,
+			dealer_nonce: dealer_nonce,
+			player_nonce: player_nonce,
+		});
+	}
+};
+
+
+/*
+ * The player deck receives a set of cards encrypted with the dealer's key,
+ * and the commitment hashes for each card.
+ */
+class DeckPlayer
+{
+	constructor(dealer_deck)
+	{
+		this.deck = [];
+		this.hand = [];
+		this.sra = new SRA();
+
+		this.deck = dealer_deck.map(dealer_card => {
+			// generate a per-card nonce that can be revealed when
+			// committing to dealing a card back to the dealer.
+			let player_nonce = randomBigint(128);
+
+			return {
+				dealer_hash: dealer_card.hash,
+				dealer_encrypted: dealer_card.encrypted, // only dealer's encryption
+				player_nonce: player_nonce,
+				player_hash: sha256(player_nonce << 256n | dealer_card.hash, 64),
+			};
+		});
+
+		shuffle(this.deck);
+	}
+
+	/*
+	 * Output the shuffled, re-encrypted deck, for export back to the dealer.
+	 * The dealer learns:
+	 *  - the player's commitment hashes for each card
+	 *  - the player's encrypted version of the dealer's encrypted card
+	 */
+	export()
+	{
+		let sra = this.sra;
+		return this.deck.map(function(card) { return {
+			encrypted: sra.encrypt(card.dealer_encrypted), // now both A and B
+			hash: card.player_hash,
+		}});
+	}
+
+	/*
+	 * Receive a card from the dealer, which is encrypted with only the player's key
+	 */
+	receive(encrypted_card)
+	{
+		// decrypt it so that we know the real card, which includes both the card id
+		// and the dealer's nonce for this card.
+		let decrypted = this.sra.decrypt(encrypted_card);
+		let dealer_nonce = decrypted >> 128n;
+		let card = decrypted & 0xFFFFFFFFFFFFFFFFn;
+
+		// find the hash in the dealer's commitment list to mark as played
+		let dealer_hash = sha256(decrypted, 64);
+		console.log("player received", bigint2hex(decrypted, 32), bigint2hex(dealer_hash, 32));
+
+		for(let player_card of this.deck)
+		{
+			if (player_card.dealer_hash != dealer_hash)
+				continue;
+			if (player_card.played)
+				throw "already played!";
+
+			player_card.played = true;
+
+			this.hand.push({
+				card: card,
+				dealer_nonce: dealer_nonce,
+				player_nonce: player_card.nonce,
+			});
+
+			return true;
+		}
+
+		throw "card not in deck!";
+	}
+
+	/*
+	 * Deal a card to the dealer.  Returns the card encrypted with only the dealer's key
+	 * and the player's nonce for this card.
+	 */
+	deal()
+	{
+		for(let card of this.deck)
+		{
+			if (card.played)
+				continue;
+			card.played = true;
+			
+			console.log("player sends to dealer:", card);
+			return [ card.dealer_encrypted, card.player_nonce ]; // only A's encryption, player's nonce
+		}
+
+		// no cards left!
+		return null;
+	}
 }
 
-// test it
-async function rsaTest()
+
+let d;
+let p;
+
+
+function setup()
 {
-	let k = await rsaKey();
-	let m = 1234n
-	let r = modExp(modExp(m, k.e, k.n), k.d, k.n)
-	if (r != m)
-		console.log("FAIL", r, m);
+	d = new DeckDealer(16);
+	p = new DeckPlayer(d.export());
+	d.import(p.export());
 }
