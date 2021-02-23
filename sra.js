@@ -4,16 +4,17 @@
  * encrypt the message in any order, and then decrypt it in
  * any order.
  */
+
+// default prime is the 15th Mersenne prime, which has 1279 bits and
+// which serves as a nothing up-my-sleeves number to provide similar
+// security to RSA2048.
+const sra_default_prime = 2n ** 1279n - 1n;
+
 class SRA
 {
-	// default prime is the 15th Mersenne prime, which has 1279 bits and
-	// which serves as a nothing up-my-sleeves number to provide similar
-	// security to RSA2048.
-	default_prime = 2n ** 1279n - 1n;
-
 	constructor(p=0n)
 	{
-		this.p = p ? p : this.default_prime;
+		this.p = p ? p : sra_default_prime;
 
 		let phi_p = this.p - 1n;
 		let dec_digits = (""+ phi_p).length;
@@ -94,23 +95,24 @@ class SRA
 	}
 
 	/*
-	 * Encrypt a binary string message with the SRA key, returning
-	 * an encrypted binary string.
+	 * Encrypt a bigint or binary string message with the SRA key, returning
+	 * an encrypted bigint
 	 */
 	encrypt(m)
 	{
-		let mi = array2bigint(m);
+		let mi = typeof(m) == "bigint" ? m : array2bigint(m);
 		let ci = this.modExp(mi, this.d, this.p);
-		return bigint2array(ci);
+		return ci;
+		//return bigint2array(ci);
 	}
 
 	/*
-	 * Encrypt a message with the SRA key
+	 * decrypt a bigint message with the SRA key into a bigint
 	 */
 	decrypt(c)
 	{
-		let ci = array2bigint(c);
-		let mi = this.modExp(ci, this.e, this.p);
-		return bigint2array(mi);
+		//let ci = array2bigint(c);
+		let mi = this.modExp(c, this.e, this.p);
+		return mi;
 	}
 }
