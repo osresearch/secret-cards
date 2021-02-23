@@ -35,6 +35,15 @@ if (is_webrtc_initiator)
 	n = new DataChannel();
 	n.offer_ready = (offer) => {
 		document.getElementById("webrtc-link").innerHTML = "<a href=" + document.location + "?webrtc_offer=" + offer + ">Link for other player</a>";
+
+		let answer = document.getElementById('webrtc-answer');
+
+		answer.addEventListener("keyup", event => {
+			if(event.key !== "Enter")
+				return;
+			n.accept(answer.value);
+			event.preventDefault();
+		});
 	};
 } else {
 const is_webrtc_initiator = !url_params.has("webrtc_offer");
@@ -52,11 +61,7 @@ const is_webrtc_initiator = !url_params.has("webrtc_offer");
 <div id="webrtc-link"></div>
 
 <form id="ui" onsubmit="return false">
-<input id="webrtc-answer" onclick="
-	let answer = document.getElementById('webrtc-answer');
-	if (is_webrtc_initiator)
-		n.accept(answer.value);
-"/>
+<input id="webrtc-answer" />
 <input type="button" value="Copy Answer" id="copy-answer" style="visibility:hidden" onclick="
 	let copy_field = document.getElementById('webrtc-answer');
 	copy_field.select();
