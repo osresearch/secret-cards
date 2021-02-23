@@ -4,6 +4,7 @@
 <script src="sha256.js"></script>
 <script src="sra.js"></script>
 <script src="cards.js"></script>
+<script src="webrtc.js"></script>
 </head>
 <body>
 <script>
@@ -21,9 +22,47 @@ function add_card(id, new_card)
 	card.innerHTML = cards.substr(new_card*2, 2);
 	document.querySelector(id).appendChild(card);
 }
+
+// if the URL does not have a webrtc offer, then we are
+// the dealer and can setup the data chanell
+
+const url_params = new URLSearchParams(window.location.search);
+const is_webrtc_initiator = !url_params.has("webrtc_offer");
+
+if (is_webrtc_initiator)
+{
+	d = new DeckDealer(52);
+	n = new DataChannel();
+	n.offer_ready = (offer) => {
+		document.getElementById("webrtc-link").innerHTML = "<a href=" + document.location + "?webrtc_offer=" + offer + ">Link for other player</a>";
+	};
+} else {
+const is_webrtc_initiator = !url_params.has("webrtc_offer");
+	n = new DataChannel(url_params.get("webrtc_offer"))
+	n.offer_ready = (answer) => {
+		let d = document.getElementById("webrtc-answer");
+		d.value = answer;
+
+		let b = document.getElementById("copy-answer");
+		b.setAttribute("style", "visibility:block");
+	};
+}
 </script>
 
-<form id="ui">
+<div id="webrtc-link"></div>
+
+<form id="ui" onsubmit="return false">
+<input id="webrtc-answer" onclick="
+	let answer = document.getElementById('webrtc-answer');
+	if (is_webrtc_initiator)
+		n.accept(answer.value);
+"/>
+<input type="button" value="Copy Answer" id="copy-answer" style="visibility:hidden" onclick="
+	let copy_field = document.getElementById('webrtc-answer');
+	copy_field.select();
+	copy_field.setSelectionRange(0,99999);
+	document.execCommand('copy');
+" />
 <input type="button" value="Shuffle" onclick="
 	console.log('Creating dealer');
 	d = new DeckDealer(52);

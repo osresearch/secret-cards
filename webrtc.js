@@ -34,6 +34,8 @@ class DataChannel
 				.then(offer => {
 					console.log("full", offer);
 					this.offer = window.btoa(JSON.stringify(offer));
+					if (this.offer_ready)
+						this.offer_ready(this.offer);
 				})
 				.then(() => new Promise(r => this.resume = r))
 				.catch(e => {
@@ -60,6 +62,8 @@ class DataChannel
 				.then(answer => {
 					console.log('answer2', answer);
 					this.answer = window.btoa(JSON.stringify(answer));
+					if (this.offer_ready)
+						this.offer_ready(this.answer);
 				})
 				.catch(e =>
 					console.log("ERROR", e)
