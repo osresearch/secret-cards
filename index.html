@@ -45,8 +45,34 @@ if (is_webrtc_initiator)
 			event.preventDefault();
 		});
 	};
+
+	n.onopen = () => {
+		// when the other side connects, send them the deck
+		let deck = d.export()
+			.map(c => bigint2hex(c.encrypted,160) + "|" + bigint2hex(c.hash,32))
+			.join(',');
+		n.channel.send("deck="+deck);
+	};
+
+	n.onmessage = (m) => {
+		console.log("message", m);
+		let [cmd,data] = m.split('=');
+		if (cmd == "deck")
+		{
+			let player_deck = data.split(',').map(c => {
+				let [enc,hash] = c.split('|');
+				enc = BigInt("0x" + enc);
+				hash = BigInt("0x" + hash);
+				return {
+					encrypted: enc,
+					hash: hash,
+				}
+			});
+
+			d.import(player_deck);
+		}
+	};
 } else {
-const is_webrtc_initiator = !url_params.has("webrtc_offer");
 	n = new DataChannel(url_params.get("webrtc_offer"))
 	n.offer_ready = (answer) => {
 		let d = document.getElementById("webrtc-answer");
@@ -54,6 +80,33 @@ const is_webrtc_initiator = !url_params.has("webrtc_offer");
 
 		let b = document.getElementById("copy-answer");
 		b.setAttribute("style", "visibility:block");
+	};
+
+	n.onmessage = (m) => {
+		console.log("message", m);
+		let [cmd,data] = m.split('=');
+		if (cmd == "deck")
+		{
+			let dealer_deck = data.split(',').map(c => {
+				let [enc,hash] = c.split('|');
+				enc = BigInt("0x" + enc);
+				hash = BigInt("0x" + hash);
+				return {
+					encrypted: enc,
+					hash: hash,
+				}
+			});
+
+			p = new DeckPlayer(dealer_deck);
+			let player_deck = p.export();
+			let msg = player_deck.map(c => {
+				let enc = bigint2hex(c.encrypted, 160);
+				let hash = bigint2hex(c.hash, 32);
+				return enc + "|" + hash;
+			}).join(',');
+
+			n.channel.send("deck=" + msg);
+		}
 	};
 }
 </script>

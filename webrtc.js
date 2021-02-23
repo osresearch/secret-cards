@@ -85,8 +85,16 @@ class DataChannel
 	{
 		console.log("init channel", c);
 		this.channel = c;
-		this.channel.onopen = () => { console.log("OPEN") };
-		this.channel.onmessage = (m) => { console.log("MESSAGE", m) };
+		this.channel.onopen = () => {
+			console.log("OPEN");
+			if (this.onopen)
+				this.onopen();
+		};
+		this.channel.onmessage = (m) => {
+			console.log("MESSAGE", m);
+			if (this.onmessage)
+				this.onmessage(m.data);
+		};
 	}
 
 	promise_ice_gathered()
