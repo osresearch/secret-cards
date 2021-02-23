@@ -78,7 +78,7 @@ class DeckDealer
 		{
 			if (card.played)
 				continue;
-			card.played = true;
+			card.played = 'player';
 			return card.player_encrypted;
 		}
 
@@ -118,7 +118,7 @@ class DeckDealer
 
 		// this is a valid unplayed card,
 		// with a valid commitment hash from dealer and player
-		player_card[0].played = 1;
+		player_card[0].played = 'dealer';
 
 		this.hand.push({
 			card: card,
@@ -128,6 +128,45 @@ class DeckDealer
 
 		console.log(this.hand.map(c => c.card));
 		return card;
+	}
+
+	/*
+	 * When the player reveals a card, validate that it is a good one.
+	 */
+	validate_card(player_nonce, card)
+	{
+		// look for this face value in our original deck
+		const dealer_cards = this.deck.filter(c => c.card == card);
+		if (dealer_cards.length != 1)
+			throw "card not in original deck";
+		const dealer_card = dealer_cards[0];
+
+		// compute the player hash for this card based on the nonce
+		const player_hash = sha256(player_nonce << 256n | dealer_card.dealer_hash, 64);
+
+		// find the player's commitment hash in the deck they sent
+		const player_cards = this.player_deck.filter(c => c.player_hash == player_hash);
+
+		if (player_cards.length == 0)
+			throw "card not found"; // return null;
+		if (player_cards.length > 1)
+			throw "duplicate hashes found"; // return null;
+
+		const player_card = player_cards[0];
+
+		if (player_hash != player_card.player_hash)
+			throw "invalid nonce or hash"; // return null;
+
+		// they claim that they have received player_card and that it
+		// has the face value of card.
+		if (player_card.played != 'player')
+			throw "not dealt to player"; // return null;
+
+		// they were dealt this card, the player nonce matches the commited value
+		// update our information about this card
+		player_card.card = card;
+
+		return player_card;
 	}
 };
 
@@ -193,19 +232,21 @@ class DeckPlayer
 		const dealer_hash = sha256(decrypted, 64);
 		//console.log("player received", bigint2hex(decrypted, 32), bigint2hex(dealer_hash, 32));
 
-		const player_card = this.deck.filter(c => c.dealer_hash == dealer_hash);
-		if (player_card.length != 1)
+		const player_cards = this.deck.filter(c => c.dealer_hash == dealer_hash);
+		if (player_cards.length != 1)
 			throw card + " card not in dealer deck!";
 
-		if (player_card[0].played)
+		const player_card = player_cards[0];
+
+		if (player_card.played)
 			throw card + " card already played!";
 
-		player_card[0].played = true;
+		player_card.played = 'player';
 
 		this.hand.push({
 			card: card,
 			dealer_nonce: dealer_nonce,
-			player_nonce: player_card[0].nonce,
+			player_nonce: player_card.player_nonce,
 		});
 
 		console.log("player hand", this.hand.map(c => c.card));
@@ -224,7 +265,7 @@ class DeckPlayer
 			if (card.played)
 				continue;
 
-			card.played = true;
+			card.played = 'dealer';
 			
 			//console.log("player sends to dealer:", card);
 
@@ -236,6 +277,26 @@ class DeckPlayer
 
 		// no cards left!
 		return null;
+	}
+
+	/*
+	 * Validate a card revealed by the dealer.
+	 */
+	validate_card(dealer_nonce, card)
+	{
+		// compute the dealer hash for this card
+		const full_card = dealer_nonce << 128n | card;
+		const dealer_hash = sha256(full_card, 64);
+
+		const dealer_cards = this.deck.filter(c => c.dealer_hash == dealer_hash);
+		if (dealer_cards.length != 1)
+			throw "invalid card";
+
+		const dealer_card = dealer_cards[0];
+		if (dealer_card.played != "dealer")
+			throw "not dealt to dealer";
+
+		return dealer_card;
 	}
 }
 
