@@ -10,6 +10,7 @@ class DeckDealer
 {
 	constructor(size)
 	{
+		this.dealer_deck = [];
 		this.deck = [];
 		this.hand = [];
 		this.sra = new SRA();
@@ -26,10 +27,10 @@ class DeckDealer
 				dealer_hash: sha256(full_card, 64), // bytes
 			};
 
-			this.deck[i] = card;
+			this.dealer_deck[i] = card;
 		}
 
-		shuffle(this.deck);
+		shuffle(this.dealer_deck);
 	}
 
 	/*
@@ -40,7 +41,7 @@ class DeckDealer
 	 */
 	export()
 	{
-		return this.deck.map(function(card) { return {
+		return this.dealer_deck.map(function(card) { return {
 			encrypted: card.dealer_encrypted,
 			hash: card.dealer_hash,
 		}});
@@ -53,20 +54,21 @@ class DeckDealer
 	 */
 	import(player_deck)
 	{
-		if (player_deck.length != this.deck.length)
+		if (player_deck.length != this.dealer_deck.length)
 			throw "length mismatch";
 
 		// should verify uniqueness of each player commitment hash
 
 		let sra = this.sra;
 
-		this.player_deck = player_deck.map( function (player_card) { return {
+		this.deck = player_deck.map( function (player_card) { return {
 			played: false,
+			card: undefined, // we don't know yet
 			player_hash: player_card.hash,
 			player_encrypted: sra.decrypt(player_card.encrypted), // now only B
 		}});
 
-		shuffle(this.player_deck);
+		shuffle(this.deck);
 	}
 
 	/*
@@ -74,7 +76,7 @@ class DeckDealer
 	 */
 	deal()
 	{
-		for(let card of this.player_deck)
+		for(let card of this.deck)
 		{
 			if (card.played)
 				continue;
@@ -101,7 +103,7 @@ class DeckDealer
 		const card = decrypted_card & 0xFFFFFFFFFFFFFFFFn;
 
 		// verify that this card matches this nonce in the dealer deck
-		const dealer_card = this.deck.filter(c => c.card == card && c.dealer_nonce == dealer_nonce);
+		const dealer_card = this.dealer_deck.filter(c => c.card == card && c.dealer_nonce == dealer_nonce);
 		if (dealer_card.length != 1)
 			throw card + " fake card! (dealer_nonce not found)";
 
@@ -109,16 +111,18 @@ class DeckDealer
 		const player_hash = sha256(player_nonce << 256n | dealer_card[0].dealer_hash, 64);
 
 		// find the player's commitment hash in the deck they sent
-		const player_card = this.player_deck.filter(c => c.player_hash == player_hash);
-		if (player_card.length != 1)
+		const player_cards = this.deck.filter(c => c.player_hash == player_hash);
+		if (player_cards.length != 1)
 			throw card + " fake nonce! (player_nonce not found)";
+		const player_card = player_cards[0];
 
-		if (player_card[0].played)
+		if (player_card.played)
 			throw card + " card already played!";
 
 		// this is a valid unplayed card,
 		// with a valid commitment hash from dealer and player
-		player_card[0].played = 'dealer';
+		player_card.played = 'dealer';
+		player_card.card = card;
 
 		this.hand.push({
 			card: card,
@@ -136,7 +140,7 @@ class DeckDealer
 	validate_card(player_nonce, card)
 	{
 		// look for this face value in our original deck
-		const dealer_cards = this.deck.filter(c => c.card == card);
+		const dealer_cards = this.dealer_deck.filter(c => c.card == card);
 		if (dealer_cards.length != 1)
 			throw "card not in original deck";
 		const dealer_card = dealer_cards[0];
@@ -145,7 +149,7 @@ class DeckDealer
 		const player_hash = sha256(player_nonce << 256n | dealer_card.dealer_hash, 64);
 
 		// find the player's commitment hash in the deck they sent
-		const player_cards = this.player_deck.filter(c => c.player_hash == player_hash);
+		const player_cards = this.deck.filter(c => c.player_hash == player_hash);
 
 		if (player_cards.length == 0)
 			throw "card not found"; // return null;
@@ -163,7 +167,7 @@ class DeckDealer
 			throw "not dealt to player"; // return null;
 
 		// they were dealt this card, the player nonce matches the commited value
-		// update our information about this card
+		// update our information about this card since it has been revealed
 		player_card.card = card;
 
 		return player_card;
@@ -189,6 +193,8 @@ class DeckPlayer
 			let player_nonce = randomBigint(128);
 
 			return {
+				played: false,
+				card: undefined,
 				dealer_hash: dealer_card.hash,
 				dealer_encrypted: dealer_card.encrypted, // only dealer's encryption
 				player_nonce: player_nonce,
@@ -242,6 +248,7 @@ class DeckPlayer
 			throw card + " card already played!";
 
 		player_card.played = 'player';
+		player_card.card = card;
 
 		this.hand.push({
 			card: card,
@@ -295,6 +302,9 @@ class DeckPlayer
 		const dealer_card = dealer_cards[0];
 		if (dealer_card.played != "dealer")
 			throw "not dealt to dealer";
+
+		// update the information about this card since they have revealed it
+		dealer_card.card = card;
 
 		return dealer_card;
 	}
