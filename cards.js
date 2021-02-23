@@ -89,6 +89,44 @@ class DeckDealer
 	}
 
 	/*
+	 * Draw a card, which is a request to the player for their nonce and the dealer
+	 * encrypted version.
+	 */
+	draw()
+	{
+		for(let card of this.deck)
+		{
+			if (card.played)
+				continue;
+			card.played = 'requested';
+			return card.player_hash;
+		}
+
+		// no cards left!
+		return null;
+	}
+
+	/*
+	 * Request from the player for a specific card.
+	 */
+	drawn(player_hash)
+	{
+		for(let card of this.deck)
+		{
+			if (card.player_hash != player_hash)
+				continue;
+			if (card.played)
+				break;
+			card.played = 'player';
+			return card.player_encrypted;
+		}
+
+		// no cards or this one has already been played,
+		// then don't allow it
+		return null;
+	}
+
+	/*
 	 * Receive a card from the player, which requires both an encrypted card and the player's nonce.
 	 */
 	receive(player_message)
@@ -116,7 +154,7 @@ class DeckDealer
 			throw card + " fake nonce! (player_nonce not found)";
 		const player_card = player_cards[0];
 
-		if (player_card.played)
+		if (player_card.played && player_card.played != "requested")
 			throw card + " card already played!";
 
 		// this is a valid unplayed card,
@@ -243,8 +281,9 @@ class DeckPlayer
 			throw card + " card not in dealer deck!";
 
 		const player_card = player_cards[0];
+		console.log(player_card);
 
-		if (player_card.played)
+		if (player_card.played && player_card.played != 'requested')
 			throw card + " card already played!";
 
 		player_card.played = 'player';
@@ -285,6 +324,50 @@ class DeckPlayer
 		// no cards left!
 		return null;
 	}
+
+	/*
+	 * Draw a card, which generates a request to the dealer for a specific card.
+	 */
+	draw()
+	{
+		for(let card of this.deck)
+		{
+			if (card.played)
+				continue;
+			card.played = 'requested';
+			return card.player_hash;
+		}
+
+		// no cards left
+		return null;
+	}
+
+	/*
+	 * Process a request from the dealer to draw a specific card.
+	 */
+	drawn(player_hash)
+	{
+		for(let card of this.deck)
+		{
+			if (card.player_hash != player_hash)
+				continue;
+			if (card.played)
+				break;
+
+			card.played = 'dealer';
+			
+			//console.log("player sends to dealer:", card);
+
+			return {
+				card: card.dealer_encrypted, // only dealer can decrypt
+				nonce: card.player_nonce
+			};
+		}
+
+		// no cards left or request for a duplicate card!
+		return null;
+	}
+
 
 	/*
 	 * Validate a card revealed by the dealer.

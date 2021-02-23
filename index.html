@@ -8,14 +8,29 @@
 <body>
 <script>
 let cards = "🂡🂢🂣🂤🂥🂦🂧🂨🂩🂪🂫🂬🂭🂮🂱🂲🂳🂴🂵🂶🂷🂸🂹🂺🂻🂼🂽🂾🃁🃂🃃🃄🃅🃆🃇🃈🃉🃊🃋🃌🃍🃎🃑🃒🃓🃔🃕🃖🃗🃘🃙🃚🃛🃜🃝🃞";
+
+function add_card(id, new_card)
+{
+	let suite = Math.floor(new_card / 12);
+	let card = document.createElement('div');
+	card.setAttribute('id', 'card-' + new_card);
+	if (suite == 1 || suite == 2)
+		card.setAttribute('style', 'color:red');
+	else
+		card.setAttribute('style', 'color:black');
+	card.innerHTML = cards.substr(new_card*2, 2);
+	document.querySelector(id).appendChild(card);
+}
 </script>
 
 <form id="ui">
 <input type="button" value="Shuffle" onclick="
 	console.log('Creating dealer');
 	d = new DeckDealer(52);
+
 	console.log('Creating player');
 	p = new DeckPlayer(d.export());
+
 	console.log('Importing shuffled deck');
 	d.import(p.export());
 
@@ -23,37 +38,29 @@ let cards = "🂡🂢🂣🂤🂥🂦🂧🂨🂩🂪🂫🂬🂭🂮🂱🂲�
 	document.querySelector('#dealer').innerHTML='';
 "/>
 
-<input type="button" value="Dealer Draw" onclick="
+<input type="button" value="Deal to dealer" onclick="
 	let new_card = d.receive(p.deal());
-	if (new_card == null)
-		return;
-	new_card = Number(new_card);
-	let suite = Math.floor(new_card / 12);
-	let value = new_card % 12;
-	let card = document.createElement('div');
-	card.setAttribute('id', 'dealer-' + new_card);
-	if (suite == 1 || suite == 2)
-		card.setAttribute('style', 'color:red');
-	else
-		card.setAttribute('style', 'color:black');
-	card.innerHTML = cards.substr(new_card*2, 2); //suite + '-' + value;
-	document.querySelector('#dealer').appendChild(card);
+	if (new_card)
+		add_card('#dealer', Number(new_card));
 " />
-<input type="button" value="Player Draw" onclick="
+
+<input type="button" value="Dealer draw" onclick="
+	let new_card = d.receive(p.drawn(d.draw()));
+	if (new_card)
+		add_card('#dealer', Number(new_card));
+" />
+
+
+<input type="button" value="Deal to player" onclick="
 	let new_card = p.receive(d.deal());
-	if (new_card == null)
-		return;
-	new_card = Number(new_card);
-	let suite = Math.floor(new_card / 12);
-	let value = new_card % 12;
-	let card = document.createElement('div');
-	card.setAttribute('id', 'player-' + new_card);
-	if (suite == 1 || suite == 2)
-		card.setAttribute('style', 'color:red');
-	else
-		card.setAttribute('style', 'color:black');
-	card.innerHTML = cards.substr(new_card*2, 2); //suite + '-' + value;
-	document.querySelector('#player').appendChild(card);
+	if (new_card)
+		add_card('#player', Number(new_card));
+" />
+
+<input type="button" value="Player draw" onclick="
+	let new_card = p.receive(d.drawn(p.draw()));
+	if (new_card)
+		add_card('#player', Number(new_card));
 " />
 </form>
 

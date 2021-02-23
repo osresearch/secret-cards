@@ -128,7 +128,7 @@ The dealing process is slightly asymetic due to the different pieces that Alice 
 Each party knows how many cards have been played. Alice can choose to go through the
 deck in order for dealing, or she can select randomly from it.
 
-Bob draws a card:
+Alice deals a card to Bob:
 * Alice selects an unused card $j$ from the deck and sends it to Bob: $E(K_b, n_j || c_j)$
 * She does not know what it contains, since it is encrypted with Bob's key $K_b$.
 * She does know that Bob committed to this card with $H(n'_j || H(n_j || c_j))$
@@ -138,7 +138,7 @@ Bob draws a card:
 * Alice does not know which card Bob has received since she does not know the mapping $S2$
 * since Bob's commitment hash does not reveal anything about the card
 
-Alice draws a card:
+Bob deals a card to Alice:
 * Bob selects an unused card $j$ from the deck and sends Alice's version of it plus his nonce to her: $E(K_a, n_j||c_j)$ and $n'_j$.
 * Alice decrypts the card with $K'_a$: $n_j || c_j = D(K_a, E(K_a, n_j||c_j))$
 * Alice knows that she has received a valid card since the nonce $n_j$ matches her list
@@ -150,6 +150,19 @@ Alice draws a card:
 * Bob can't send a fake card since he doesn't know Alice's nonce $n_j$
 * Bob can't send a fake commitment nonce $n'_j$ since he doesn't know the card contents
 
+Alice draws a card:
+* Alice chooses an unplayed card and send Bob his commitment hash on it,
+* Bob replies with the Alice-only encrypted version and his nonce for that card,
+* Since he knows the mapping of his commitment hashes to her versions)
+
+Bob draws a card:
+* Bob chooses an unplayed card and send Alice his commitment hash;
+* She replies with the Bob-only encrypted version
+* She doesn't learn anything about the card
+
+Note that there is a race condition for these operations; the player and dealer
+must not mix the dealing and drawing, or else they could end up selecting the
+same card and dealing it to each other.
 
 Revealing cards
 ---
