@@ -12,7 +12,6 @@ class DeckDealer
 	{
 		this.dealer_deck = [];
 		this.deck = [];
-		this.hand = [];
 		this.sra = new SRA();
 
 		for(let i = 0 ; i < size ; i++)
@@ -162,13 +161,7 @@ class DeckDealer
 		player_card.played = 'dealer';
 		player_card.card = card;
 
-		this.hand.push({
-			card: card,
-			dealer_nonce: dealer_nonce,
-			player_nonce: player_nonce,
-		});
-
-		console.log("dealer hand", this.hand.map(c => c.card));
+		console.log("dealer hand", this.deck.filter(c => c.played == 'dealer').map(c => c.card));
 		return card;
 	}
 
@@ -222,7 +215,6 @@ class DeckPlayer
 	constructor(dealer_deck)
 	{
 		this.deck = [];
-		this.hand = [];
 		this.sra = new SRA();
 
 		this.deck = dealer_deck.map(dealer_card => {
@@ -289,13 +281,7 @@ class DeckPlayer
 		player_card.played = 'player';
 		player_card.card = card;
 
-		this.hand.push({
-			card: card,
-			dealer_nonce: dealer_nonce,
-			player_nonce: player_card.player_nonce,
-		});
-
-		console.log("player hand", this.hand.map(c => c.card));
+		console.log("player hand", this.deck.filter(c => c.played == 'player').map(c => c.card));
 
 		return card;
 	}
