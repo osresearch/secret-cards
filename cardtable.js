@@ -8,11 +8,7 @@ class CardTable
 	{
 		this.is_dealer = is_dealer;
 		this.deck_size = deck_size;
-
-		if (is_dealer)
-			this.deck = new DeckDealer(deck_size);
-		else
-			this.deck = null;
+		this.deck = null;
 	}
 
 	/*
@@ -27,15 +23,18 @@ class CardTable
 	}
 
 	/*
-	 * When we're connected, start the process
+	 * When we're connected or restarting, generate a deck and send it over
 	 */
-	connected()
+	shuffle()
 	{
-		// player waits for the dealer
+		// player waits for the dealer, so do nothing
 		if (!this.is_dealer)
 			return;
 
-		// generate a shuffled deck for export
+		// create a new deck
+		this.deck = new DeckDealer(this.deck_size);
+
+		// shuffle and encrypt the deck for export
 		return this.export_deck();
 	}
 

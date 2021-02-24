@@ -172,7 +172,7 @@ if (is_webrtc_initiator)
 		document.getElementById("game-ui").setAttribute("style", "display:block");
 
 		// and send them the deck
-		n.channel.send(cardtable.connected());
+		n.channel.send(cardtable.shuffle());
 	};
 } else {
 	n = new DataChannel(url_params.get("token"))
@@ -190,6 +190,9 @@ if (is_webrtc_initiator)
 		// when the other side connects, hide the webrtc gui
 		document.getElementById("webrtc-ui").setAttribute("style", "display:none");
 		document.getElementById("game-ui").setAttribute("style", "display:block");
+
+		// not the dealer, so hide the shuffle button, too
+		document.getElementById("shuffle-button").setAttribute("style", "display:none");
 	};
 }
 
@@ -287,7 +290,10 @@ n.onmessage = (m) => {
 </tr>
 <tr>
 <th width="10%">Deck</th>
-<td></td>
+<td><input type="button" id="shuffle-button" class="card-button" value="SHUFFLE" onclick="
+	n.channel.send(cardtable.shuffle());
+	display_update();
+"/></td>
 <td width="80%"><div id="deck" style="font-size:32px"></div></td>
 </tr>
 </table>
