@@ -36,7 +36,7 @@
 
 .card-button {
 	width: 128px;
-	height: 32px;
+	height: 40px;
 }
 </style>
 </head>
@@ -56,6 +56,12 @@ function add_card(id, card)
 {
 	let new_card = document.createElement('span');
 
+	if (id == "player")
+		id = is_dealer ? "other" : "self";
+	else
+	if (id == "dealer")
+		id = is_dealer ? "self" : "other";
+
 	if (card.card == undefined)
 	{
 		new_card.innerHTML = default_card;
@@ -71,7 +77,9 @@ function add_card(id, card)
 		if (card.revealed)
 		{
 			style += 'background:lightgray;';
-		} else {
+		} else
+		if (id == 'self')
+		{
 			// add a "reveal" button at the bottom of the card
 			let reveal_button = document.createElement('div');
 			reveal_button.setAttribute("class", "reveal-button");
@@ -85,33 +93,32 @@ function add_card(id, card)
 			new_card.appendChild(reveal_button);
 		}
 
-		// add a "discard" button at the bottom of the card
-		let discard_button = document.createElement('div');
-		discard_button.setAttribute("class", "discard-button");
-		discard_button.onclick = () => {
-			n.channel.send(cardtable.discard(card));
-			display_update();
-		};
+		// add a "discard" button at the bottom of the card for our own
+		if (id == 'self')
+		{
+			let discard_button = document.createElement('div');
+			discard_button.setAttribute("class", "discard-button");
+			discard_button.onclick = () => {
+				n.channel.send(cardtable.discard(card));
+				display_update();
+			};
 
-		discard_button.innerHTML = "DISCARD";
-		new_card.appendChild(discard_button);
-
-		new_card.oncontextmenu = () => {
-			n.channel.send(cardtable.discard(card));
-			display_update();
-		};
+			discard_button.innerHTML = "DISCARD";
+			new_card.appendChild(discard_button);
+		}
 
 		new_card.setAttribute('style', style);
 
 	}
+
 
 	document.getElementById(id).appendChild(new_card);
 }
 
 function display_update()
 {
-	document.getElementById("dealer").innerHTML = "";
-	document.getElementById("player").innerHTML = "";
+	document.getElementById("self").innerHTML = "";
+	document.getElementById("other").innerHTML = "";
 	document.getElementById("deck").innerHTML = "";
 	document.getElementById("table").innerHTML = "";
 	document.getElementById("discard").innerHTML = "";
@@ -119,7 +126,9 @@ function display_update()
 	if (!cardtable || !cardtable.deck || !cardtable.deck.deck)
 		return;
 
-	for(let c of cardtable.deck.deck)
+	let deck = cardtable.deck.deck;
+
+	for(let c of deck)
 	{
 		let div = c.played ? c.played : "deck";
 		add_card(div, c);
@@ -131,22 +140,26 @@ function display_update()
 // the dealer and can setup the data chanell
 
 const url_params = new URLSearchParams(window.location.search);
-const is_webrtc_initiator = !url_params.has("webrtc_offer");
+const is_webrtc_initiator = !url_params.has("token");
+
+console.log("dealer?", is_webrtc_initiator);
 
 if (is_webrtc_initiator)
 {
 	n = new DataChannel();
 	is_dealer = true;
 	cardtable = new CardTable(num_cards, is_dealer);
+	let connected = false;
 
 	n.offer_ready = (offer) => {
-		document.getElementById("webrtc-link").innerHTML = "<a href=" + document.location + "?webrtc_offer=" + offer + ">Link for other player</a>";
+		document.getElementById("webrtc-link").innerHTML = "<a href=" + document.location + "?token=" + offer + ">Link for other player</a>";
 
 		let answer = document.getElementById('webrtc-answer');
 
 		answer.addEventListener("keyup", event => {
-			if(event.key !== "Enter")
+			if (connected || event.key !== "Enter")
 				return;
+			console.log("accepting", answer.value);
 			n.accept(answer.value);
 			event.preventDefault();
 		});
@@ -154,6 +167,7 @@ if (is_webrtc_initiator)
 
 	n.onopen = () => {
 		// when the other side connects, hide the webrtc gui
+		connected = true;
 		document.getElementById("webrtc-ui").setAttribute("style", "display:none");
 		document.getElementById("game-ui").setAttribute("style", "display:block");
 
@@ -161,7 +175,7 @@ if (is_webrtc_initiator)
 		n.channel.send(cardtable.connected());
 	};
 } else {
-	n = new DataChannel(url_params.get("webrtc_offer"))
+	n = new DataChannel(url_params.get("token"))
 	cardtable = new CardTable(num_cards, is_dealer);
 
 	n.offer_ready = (answer) => {
@@ -179,8 +193,31 @@ if (is_webrtc_initiator)
 	};
 }
 
+function chat(msg,send=0)
+{
+	if (send)
+	{
+		n.channel.send('chat=' + msg);
+		msg = "YOU: " + msg;
+	} else {
+		msg = "THEM:" + msg;
+	}
+
+	let div = document.getElementById("chat");
+
+	div.appendChild(document.createTextNode(msg));
+	div.appendChild(document.createElement("br"));
+	div.scrollTop = div.scrollHeight;
+	return;
+}
+
 n.onmessage = (m) => {
 	console.log("RX", m.substr(0,64));
+	if (m.substr(0,5) == "chat=")
+	{
+		chat(m.substr(5));
+		return;
+	}
 
 	let resp = cardtable.command(m);
 	if (resp)
@@ -207,26 +244,24 @@ n.onmessage = (m) => {
 </form>
 
 <div id="game-ui" style="display:none">
-<form id="ui" onsubmit="return false">
-
-</form>
 
 <table>
 <tr>
-<th width="10%">Deck</th>
-<td></td>
-<td width="80%"><div id="deck" style="font-size:32px"></div></td>
-</tr>
-<tr>
-<th>Dealer</th>
+<th>Self</th>
 <td>
-	<input type="button" class="card-button" value="DRAW" onclick="n.channel.send('draw')" /><br/>
-	<input type="button" class="card-button" value="FACEUP" onclick="n.channel.send('draw=faceup')" />
+<input type="button" class="card-button" value="DRAW" onclick="
+	n.channel.send('draw')
+	display_update();
+" /><br/>
+<input type="button" class="card-button" value="FACEUP" onclick="
+	n.channel.send('draw=faceup')
+	display_update();
+" />
 </td>
-<td height="64px"><div id="dealer" style="font-size:64px"></div></td>
+<td height="64px"><div id="self" style="font-size:64px"></div></td>
 </tr>
 <tr>
-<th>Player</th>
+<th>Other</th>
 <td>
 <input type="button" class="card-button" value="DRAW" onclick="
 	n.channel.send(cardtable.command('draw'));
@@ -237,20 +272,41 @@ n.onmessage = (m) => {
 	n.channel.send(cardtable.command('draw=faceup'));
 	display_update();
 " />
-<td height="64px"><div id="player" style="font-size:64px"></div></td>
+<td height="64px"><div id="other" style="font-size:64px"></div></td>
 </td>
 </tr>
 <tr>
 <th>Discard</th>
-<td><div id="discard" style="font-size:32px"></div></td>
 <td></td>
+<td><div id="discard" style="font-size:32px"></div></td>
 </tr>
 <tr>
 <th>Table</th>
-<td><div id="table" style="font-size:64px"></div></td>
 <td></td>
+<td><div id="table" style="font-size:64px"></div></td>
+</tr>
+<tr>
+<th width="10%">Deck</th>
+<td></td>
+<td width="80%"><div id="deck" style="font-size:32px"></div></td>
 </tr>
 </table>
+
+<form id="chat-form" autocomplete="off" onsubmit="return false">
+	<input type="text" id="chat-input" size="80%" />
+	<input type="submit" value="Send" />
+</form>
+
+<div id="chat" style="width:90%; height:250px; overflow:scroll;"></div>
+
+<script>
+document.getElementById("chat-form").addEventListener("submit", () => {
+	let chat_input = document.getElementById('chat-input');
+	let msg = chat_input.value;
+	chat_input.value='';
+	chat(msg, 1);
+});
+</script>
 
 </div>
 
