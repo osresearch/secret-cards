@@ -201,6 +201,7 @@ class DeckDealer
 
 		// they were dealt this card, the player nonce matches the commited value
 		// update our information about this card since it has been revealed
+		player_card.revealed = true;
 		player_card.card = card;
 		player_card.player_nonce = player_nonce;
 
