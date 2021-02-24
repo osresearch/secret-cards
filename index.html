@@ -152,7 +152,7 @@ if (is_webrtc_initiator)
 	let connected = false;
 
 	n.offer_ready = (offer) => {
-		document.getElementById("webrtc-link").innerHTML = "<a href=" + document.location + "?token=" + offer + ">Link for other player</a>";
+		document.getElementById("webrtc-link").innerHTML = "Send this <a href=" + document.location + "?token=" + offer + ">link to other player</a>";
 
 		let answer = document.getElementById('webrtc-answer');
 
@@ -235,9 +235,22 @@ n.onmessage = (m) => {
 </script>
 
 
-<form id="webrtc-ui" onsubmit="return false">
-<div id="webrtc-link"></div>
-<input id="webrtc-answer" />
+<div id="webrtc-ui">
+<h1>secret.cards: pre-alpha "Mental Poker"</h1>
+More info <a href="README.md">README.md</a>
+and <a href="https://people.csail.mit.edu/rivest/pubs/SRA81.pdf">SRA81.pdf</a>.
+
+<img
+	src="images/mersenne.jpg"
+	style="position:fixed; bottom:0px; left:0px"
+	id="logo"
+/>
+
+<form onsubmit="return false">
+<p>
+<span id="webrtc-link"></span>
+<p>
+Enter their answer here: <input id="webrtc-answer" />
 <input type="button" value="Copy Answer" id="copy-answer" style="visibility:hidden" onclick="
 	let copy_field = document.getElementById('webrtc-answer');
 	copy_field.select();
@@ -245,6 +258,7 @@ n.onmessage = (m) => {
 	document.execCommand('copy');
 " />
 </form>
+</div>
 
 <div id="game-ui" style="display:none">
 
