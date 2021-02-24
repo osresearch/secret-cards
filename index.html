@@ -4,11 +4,18 @@
 <script src="sha256.js"></script>
 <script src="sra.js"></script>
 <script src="cards.js"></script>
+<script src="cardtable.js"></script>
 <script src="webrtc.js"></script>
 </head>
 <body>
 <script>
-let cards = "🂡🂢🂣🂤🂥🂦🂧🂨🂩🂪🂫🂬🂭🂮🂱🂲🂳🂴🂵🂶🂷🂸🂹🂺🂻🂼🂽🂾🃁🃂🃃🃄🃅🃆🃇🃈🃉🃊🃋🃌🃍🃎🃑🃒🃓🃔🃕🃖🃗🃘🃙🃚🃛🃜🃝🃞";
+const cards =
+"🂡🂢🂣🂤🂥🂦🂧🂨🂩🂪🂫🂭🂮"+
+"🂱🂲🂳🂴🂵🂶🂷🂸🂹🂺🂻🂽🂾"+
+"🃁🃂🃃🃄🃅🃆🃇🃈🃉🃊🃋🃍🃎"+
+"🃑🃒🃓🃔🃕🃖🃗🃘🃙🃚🃛🃝🃞";
+const num_cards = cards.length/2; // two-byte characters
+let cardtable = null;
 
 function add_card(id, new_card)
 {
@@ -31,8 +38,9 @@ const is_webrtc_initiator = !url_params.has("webrtc_offer");
 
 if (is_webrtc_initiator)
 {
-	d = new DeckDealer(52);
 	n = new DataChannel();
+	cardtable = new CardTable(num_cards, true);
+
 	n.offer_ready = (offer) => {
 		document.getElementById("webrtc-link").innerHTML = "<a href=" + document.location + "?webrtc_offer=" + offer + ">Link for other player</a>";
 
@@ -48,32 +56,12 @@ if (is_webrtc_initiator)
 
 	n.onopen = () => {
 		// when the other side connects, send them the deck
-		let deck = d.export()
-			.map(c => bigint2hex(c.encrypted,80) + "|" + bigint2hex(c.hash,32))
-			.join(',');
-		n.channel.send("deck="+deck);
-	};
-
-	n.onmessage = (m) => {
-		console.log("message", m);
-		let [cmd,data] = m.split('=');
-		if (cmd == "deck")
-		{
-			let player_deck = data.split(',').map(c => {
-				let [enc,hash] = c.split('|');
-				enc = BigInt("0x" + enc);
-				hash = BigInt("0x" + hash);
-				return {
-					encrypted: enc,
-					hash: hash,
-				}
-			});
-
-			d.import(player_deck);
-		}
+		n.channel.send(cardtable.command("shuffle"));
 	};
 } else {
 	n = new DataChannel(url_params.get("webrtc_offer"))
+	cardtable = new CardTable(num_cards, false);
+
 	n.offer_ready = (answer) => {
 		let d = document.getElementById("webrtc-answer");
 		d.value = answer;
@@ -81,34 +69,19 @@ if (is_webrtc_initiator)
 		let b = document.getElementById("copy-answer");
 		b.setAttribute("style", "visibility:block");
 	};
-
-	n.onmessage = (m) => {
-		console.log("message", m);
-		let [cmd,data] = m.split('=');
-		if (cmd == "deck")
-		{
-			let dealer_deck = data.split(',').map(c => {
-				let [enc,hash] = c.split('|');
-				enc = BigInt("0x" + enc);
-				hash = BigInt("0x" + hash);
-				return {
-					encrypted: enc,
-					hash: hash,
-				}
-			});
-
-			p = new DeckPlayer(dealer_deck);
-			let player_deck = p.export();
-			let msg = player_deck.map(c => {
-				let enc = bigint2hex(c.encrypted, 80);
-				let hash = bigint2hex(c.hash, 32);
-				return enc + "|" + hash;
-			}).join(',');
-
-			n.channel.send("deck=" + msg);
-		}
-	};
 }
+
+n.onmessage = (m) => {
+	console.log("RX", m.substr(0,64));
+
+	let resp = cardtable.command(m);
+	if (!resp)
+		return;
+
+	console.log("TX", resp.substr(0,64));
+	n.channel.send(resp);
+};
+
 </script>
 
 <div id="webrtc-link"></div>
