@@ -35,6 +35,27 @@ There are newer papers and algorithms that add these desired features,
 such as described in "A Toolbox for Mental Card Games", although these
 are significantly more complicated than Extended SRA.
 
+Operations
+===
+
+The primitive operations are:
+
+* Shuffle all the cards
+* Dealer chooses a face-down card to give to the Player (Player learns value, Dealer does not)
+* Player chooses a face-down card to give to the Dealer (Dealer learns value, Player does not)
+* Dealer asks the Player for a face-down card
+* Player asks the Dealer for a face-down card
+* Dealer or Player reveals a card that they know (other party can verify the card is legitimate and its tags)
+* Dealer or Player tag a card as being in the Dealer or Player hands, Discarded, on the Table, in the Deck, etc
+
+From these primitives more complex operations can be constructed, such as
+_Dealer plays a face-up card on the Table from the Deck_:
+* Dealer chooses a face-down card to give to the Player, who learns the value
+* Player verifies that the card is valid and tagged as in the Deck
+* Player reveals the card's value to the Dealer
+* Dealer verifies that the revealed card is the previously face-down card
+* Player and Dealer tag the card as on the Table
+
 
 Setup
 ===
