@@ -40,7 +40,7 @@ class CardTable
 	}
 
 	/*
-	 * Reveal a card from our deck
+	 * Reveal a card from our hand
 	 */
 	reveal(card)
 	{
@@ -52,6 +52,19 @@ class CardTable
 		let nonce = this.is_dealer ? card.dealer_nonce : card.player_nonce;
 
 		return "reveal=" + bigint2hex(card.card, 32) + "," + bigint2hex(nonce, 32);
+	}
+
+	/*
+	 * Discard a card from our hand
+	 * (or the deck, or the other player's hand, although there might be game rules about that)
+	 */
+	discard(card)
+	{
+		if (!card)
+			return;
+
+		card.played = 'discard';
+		return "discard=" + bigint2hex(card.player_hash, 32);
 	}
 
 	/*
@@ -156,6 +169,21 @@ class CardTable
 			card = BigInt("0x" + card);
 			if (this.deck.validate_card(player_nonce, card))
 				console.log("valid card", card);
+			return;
+		}
+
+		if (cmd == 'discard')
+		{
+			// they are discarding a card from their hand; only the player nonce is required
+			const player_hash = BigInt("0x" + data);
+			const cards = this.deck.deck.filter(c => c.player_hash == player_hash);
+			if (cards.length != 1)
+				throw "bad card", player_hash;
+			const card = cards[0];
+
+			// todo: validate that they had the card to discard?
+			card.played = 'discard';
+
 			return;
 		}
 	};

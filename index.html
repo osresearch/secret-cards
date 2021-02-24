@@ -38,11 +38,17 @@ function add_card(id, card)
 
 		if (card.revealed)
 			style += 'background:lightgray;';
-		else
-			new_card.onclick = () => {
+
+		new_card.onclick = () => {
+			if (!card.revealed)
 				n.channel.send(cardtable.reveal(card));
-				display_update();
-			};
+			display_update();
+		};
+
+		new_card.oncontextmenu = () => {
+			n.channel.send(cardtable.discard(card));
+			display_update();
+		};
 
 		new_card.setAttribute('style', style);
 
@@ -59,6 +65,7 @@ function display_update()
 	document.getElementById("player").innerHTML = "";
 	document.getElementById("deck").innerHTML = "";
 	document.getElementById("table").innerHTML = "";
+	document.getElementById("discard").innerHTML = "";
 
 	if (!cardtable || !cardtable.deck || !cardtable.deck.deck)
 		return;
@@ -153,28 +160,19 @@ n.onmessage = (m) => {
 <div id="game-ui" style="display:none">
 <form id="ui" onsubmit="return false">
 
-<input type="button" value="Draw a card" onclick="
-	let new_card = d.receive(p.deal());
-	if (new_card)
-		add_card('#dealer', Number(new_card));
-" />
+<input type="button" value="Draw a card (facedown)" onclick="n.channel.send('draw')" />
+<input type="button" value="Draw a card (faceup)" onclick="n.channel.send('draw=faceup')" />
 
 <input type="button" value="Deal a card (facedown)" onclick="
 	n.channel.send(cardtable.command('draw'));
 	display_update();
 " />
 
-
 <input type="button" value="Deal a card (faceup)" onclick="
 	n.channel.send(cardtable.command('draw=faceup'));
 	display_update();
 " />
 
-<input type="button" value="Player draw" onclick="
-	let new_card = p.receive(d.drawn(p.draw()));
-	if (new_card)
-		add_card('#player', Number(new_card));
-" />
 </form>
 
 <table>
@@ -183,12 +181,14 @@ n.onmessage = (m) => {
 <th>Table</th>
 <th>Dealer</th>
 <th>Player</th>
+<th>Discard</th>
 </tr>
 <tr>
 <td><div id="deck" style="font-size:16"></div></td>
 <td><div id="table" style="font-size:64px"></div></td>
 <td><div id="dealer" style="font-size:64px"></div></td>
 <td><div id="player" style="font-size:64px"></div></td>
+<td><div id="discard" style="font-size:16"></div></td>
 </tr>
 </table>
 </div>
