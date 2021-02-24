@@ -6,6 +6,34 @@
 <script src="cards.js"></script>
 <script src="cardtable.js"></script>
 <script src="webrtc.js"></script>
+<style>
+.reveal-button, .discard-button {
+	display: block;
+	position: absolute;
+	left: 0px;
+	width: 64px;
+	height: 32px;
+	color: #ffffff00;
+	font-size: 16px;
+}
+
+.reveal-button { top:0px; }
+.discard-button { top:40px; }
+
+.reveal-button:hover, .discard-button:hover {
+	background: #800040a0;
+	color:#000;
+}
+
+.suite-1, .suite-2 {
+	position: relative;
+	color: red;
+}
+.suite-0, .suite-3 {
+	position: relative;
+	color: blue;
+}
+</style>
 </head>
 <body>
 <script>
@@ -28,22 +56,40 @@ function add_card(id, card)
 		new_card.innerHTML = default_card;
 	} else {
 		let card_num = Number(card.card);
-		let suite = Math.floor(card_num / 12);
+		let suite = Math.floor(card_num / 13);
 
+		new_card.innerHTML = cards.substr(card_num*2, 2);
+
+		new_card.setAttribute('class', 'suite-' + suite);
 		let style = '';
-		if (suite == 1 || suite == 2)
-			style += 'color:red;';
-		else
-			style += 'color:blue;';
 
 		if (card.revealed)
+		{
 			style += 'background:lightgray;';
+		} else {
+			// add a "reveal" button at the bottom of the card
+			let reveal_button = document.createElement('div');
+			reveal_button.setAttribute("class", "reveal-button");
+			reveal_button.onclick = () => {
+				if (!card.revealed)
+					n.channel.send(cardtable.reveal(card));
+				display_update();
+			};
 
-		new_card.onclick = () => {
-			if (!card.revealed)
-				n.channel.send(cardtable.reveal(card));
+			reveal_button.innerHTML = "REVEAL";
+			new_card.appendChild(reveal_button);
+		}
+
+		// add a "discard" button at the bottom of the card
+		let discard_button = document.createElement('div');
+		discard_button.setAttribute("class", "discard-button");
+		discard_button.onclick = () => {
+			n.channel.send(cardtable.discard(card));
 			display_update();
 		};
+
+		discard_button.innerHTML = "DISCARD";
+		new_card.appendChild(discard_button);
 
 		new_card.oncontextmenu = () => {
 			n.channel.send(cardtable.discard(card));
@@ -51,8 +97,6 @@ function add_card(id, card)
 		};
 
 		new_card.setAttribute('style', style);
-
-		new_card.innerHTML = cards.substr(card_num*2, 2);
 
 	}
 
@@ -184,11 +228,11 @@ n.onmessage = (m) => {
 <th>Discard</th>
 </tr>
 <tr>
-<td><div id="deck" style="font-size:16"></div></td>
+<td><div id="deck" style="font-size:32px"></div></td>
 <td><div id="table" style="font-size:64px"></div></td>
 <td><div id="dealer" style="font-size:64px"></div></td>
 <td><div id="player" style="font-size:64px"></div></td>
-<td><div id="discard" style="font-size:16"></div></td>
+<td><div id="discard" style="font-size:32px"></div></td>
 </tr>
 </table>
 </div>
