@@ -8,7 +8,8 @@
 // default prime is the 15th Mersenne prime, which has 1279 bits and
 // which serves as a nothing up-my-sleeves number to provide similar
 // security to RSA2048.
-const sra_default_prime = 2n ** 1279n - 1n;
+//const sra_default_prime = 2n ** 1279n - 1n;
+const sra_default_prime = 2n ** 607n - 1n;
 
 class SRA
 {

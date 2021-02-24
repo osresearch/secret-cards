@@ -49,7 +49,7 @@ if (is_webrtc_initiator)
 	n.onopen = () => {
 		// when the other side connects, send them the deck
 		let deck = d.export()
-			.map(c => bigint2hex(c.encrypted,160) + "|" + bigint2hex(c.hash,32))
+			.map(c => bigint2hex(c.encrypted,80) + "|" + bigint2hex(c.hash,32))
 			.join(',');
 		n.channel.send("deck="+deck);
 	};
@@ -100,7 +100,7 @@ if (is_webrtc_initiator)
 			p = new DeckPlayer(dealer_deck);
 			let player_deck = p.export();
 			let msg = player_deck.map(c => {
-				let enc = bigint2hex(c.encrypted, 160);
+				let enc = bigint2hex(c.encrypted, 80);
 				let hash = bigint2hex(c.hash, 32);
 				return enc + "|" + hash;
 			}).join(',');
