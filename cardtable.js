@@ -27,20 +27,40 @@ class CardTable
 	}
 
 	/*
+	 * When we're connected, start the process
+	 */
+	connected()
+	{
+		// player waits for the dealer
+		if (!this.is_dealer)
+			return;
+
+		// generate a shuffled deck for export
+		return this.export_deck();
+	}
+
+	/*
+	 * Reveal a card from our deck
+	 */
+	reveal(card)
+	{
+		if (!card || card.card == undefined)
+			return;
+
+		card.revealed = true;
+		console.log("reveal", card);
+		let nonce = this.is_dealer ? card.dealer_nonce : card.player_nonce;
+
+		return "reveal=" + bigint2hex(card.card, 32) + "," + bigint2hex(nonce, 32);
+	}
+
+	/*
 	 * Receive a command from the other player,
 	 * optionally returning a command to send in return.
 	 */
 	command(m)
 	{
 		let [cmd,data] = m.split('=');
-		if (cmd == 'shuffle')
-		{
-			if (!this.is_dealer)
-				throw "can't shuffle, not the dealer";
-
-			// generate a shuffled deck for export
-			return this.export_deck();
-		}
 
 		if (cmd == 'deck')
 		{
@@ -82,17 +102,17 @@ class CardTable
 				// must have a nonce!
 				if (!player_nonce)
 					throw "dealer must receive nonce"
-				player_nonce = BigInt("0x" + nonce);
+				player_nonce = BigInt("0x" + player_nonce);
 				card = this.deck.receive({card: encrypted_card, nonce: player_nonce});
 			} else {
 				// nonce is not required for receiving, but is required for revealing
 				card = this.deck.receive(encrypted_card);
-				let player_cards = this.deck.deck.filter(c => c.card == card)
-				player_nonce = player_cards[0].player_nonce;
+				//let player_cards = this.deck.deck.filter(c => c.card == card)
+				//player_nonce = player_cards[0].player_nonce;
 			}
 
 			if (options == 'faceup')
-				return "reveal=" + card + "," + bigint2hex(player_nonce, 32);
+				return this.reveal(card);
 
 			return;
 		}
@@ -102,6 +122,14 @@ class CardTable
 			// if there is data, then they want a specific card.
 			// otherwise send them any card.
 			let card;
+			let target = 'facedown';
+
+			if (data == 'faceup')
+			{
+				target='faceup';
+				data = false;
+			}
+
 			if (data)
 			{
 				let player_hash = BigInt("0x" + data);
@@ -111,10 +139,13 @@ class CardTable
 			}
 
 			if (this.is_dealer)
+			{
 				// send just the encrypted card back to them
-				return "card=player," + bigint2hex(card, 80);
-			else
-				return "card=dealer," + bigint2hex(card.card, 80) + "," + bigint2hex(card.nonce, 32);
+				return "card=" + target + "," + bigint2hex(card, 80);
+			} else {
+				// send the card with the encryption, plus our nonce to validate it
+				return "card=" + target + "," + bigint2hex(card.card, 80) + "," + bigint2hex(card.nonce, 32);
+			}
 		}
 
 		if (cmd == 'reveal')
@@ -122,6 +153,7 @@ class CardTable
 			// they have revealed a card, validate the player nonce
 			let [card,player_nonce] = data.split(',');
 			player_nonce = BigInt("0x" + player_nonce);
+			card = BigInt("0x" + card);
 			if (this.deck.validate_card(player_nonce, card))
 				console.log("valid card", card);
 			return;
