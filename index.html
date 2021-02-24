@@ -6,6 +6,29 @@
 <script src="cards.js"></script>
 <script src="cardtable.js"></script>
 <script src="webrtc.js"></script>
+
+
+<!-- HTML Meta Tags -->
+<title>secret.cards - online card games without a trusted dealer</title>
+<meta name="description" content="Play card games with cryptographic proof of the player's hands. No dealer, no server, no cheating.">
+
+<!-- Facebook Meta Tags -->
+<meta property="og:url" content="https://www.opengraph.xyz/">
+<meta property="og:type" content="website">
+<meta property="og:title" content="secret.cards - online card games without a trusted dealer">
+<meta property="og:description" content="Play card games with cryptographic proof of the player's hands. No dealer, no server, no cheating.">
+<meta property="og:image" content="https://secret.cards/images/header.jpg">
+
+<!-- Twitter Meta Tags -->
+<meta name="twitter:card" content="summary_large_image">
+<meta property="twitter:domain" content="opengraph.xyz">
+<meta property="twitter:url" content="https://www.opengraph.xyz/">
+<meta name="twitter:title" content="secret.cards - online card games without a trusted dealer">
+<meta name="twitter:description" content="Play card games with cryptographic proof of the player's hands. No dealer, no server, no cheating.">
+<meta name="twitter:image" content="https://secret.cards/images/header.jpg">
+
+<!-- Meta Tags Generated via https://www.opengraph.xyz -->
+
 <style>
 .reveal-button, .discard-button {
 	display: block;
@@ -237,14 +260,13 @@ n.onmessage = (m) => {
 
 <div id="webrtc-ui">
 <h1>secret.cards: pre-alpha "Mental Poker"</h1>
-More info <a href="README.md">README.md</a>
-and <a href="https://people.csail.mit.edu/rivest/pubs/SRA81.pdf">SRA81.pdf</a>.
+<h2>No dealer, no server, no cheating</h2>
 
-<img
-	src="images/mersenne.jpg"
-	style="position:fixed; bottom:0px; left:0px"
-	id="logo"
-/>
+More info in the <a href="README.md">README.md</a>
+and Shamir, Rivest, Adleman's paper <a href="https://people.csail.mit.edu/rivest/pubs/SRA81.pdf">SRA81.pdf</a>.
+<p>
+Source is <a href="https://github.com/osresearch/secret-cards">github.com/osresearch/secret-cards</a>.
+Please <a href="https://github.com/osresearch/secret-cards/issues">file issues</a> and <a href="https://github.com/osresearch/secret-cards/pull-requests">pull requets</a>.
 
 <form onsubmit="return false">
 <p>
@@ -258,6 +280,17 @@ Enter their answer here: <input id="webrtc-answer" />
 	document.execCommand('copy');
 " />
 </form>
+
+<p>
+2<sup>207</sup> - 1 = 53113799281676709868958820655246862732959311772703192319944413820040355986085224273916250226\<br/>
+5229285668889329486246501015346579337652707239409519978766587351943831270835393219031728127
+
+<img
+	src="images/mersenne.jpg"
+	style="position:fixed; bottom:0px; right:0px; z-index:-1;"
+	id="logo"
+/>
+
 </div>
 
 <div id="game-ui" style="display:none">
