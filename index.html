@@ -15,20 +15,61 @@ const cards =
 "🃁🃂🃃🃄🃅🃆🃇🃈🃉🃊🃋🃍🃎"+
 "🃑🃒🃓🃔🃕🃖🃗🃘🃙🃚🃛🃝🃞";
 const num_cards = cards.length/2; // two-byte characters
+const default_card = "🂠";
 let cardtable = null;
+let is_dealer = false;
 
-function add_card(id, new_card)
+function add_card(id, card)
 {
-	let suite = Math.floor(new_card / 12);
-	let card = document.createElement('div');
-	card.setAttribute('id', 'card-' + new_card);
-	if (suite == 1 || suite == 2)
-		card.setAttribute('style', 'color:red');
-	else
-		card.setAttribute('style', 'color:black');
-	card.innerHTML = cards.substr(new_card*2, 2);
-	document.querySelector(id).appendChild(card);
+	let new_card = document.createElement('div');
+
+	if (card.card == undefined)
+	{
+		new_card.innerHTML = default_card;
+	} else {
+		let card_num = Number(card.card);
+		let suite = Math.floor(card_num / 12);
+
+		let style = '';
+		if (suite == 1 || suite == 2)
+			style += 'color:red;';
+		else
+			style += 'color:blue;';
+
+		if (card.revealed)
+			style += 'background:lightgray;';
+		else
+			new_card.onclick = () => {
+				n.channel.send(cardtable.reveal(card));
+				display_update();
+			};
+
+		new_card.setAttribute('style', style);
+
+		new_card.innerHTML = cards.substr(card_num*2, 2);
+
+	}
+
+	document.getElementById(id).appendChild(new_card);
 }
+
+function display_update()
+{
+	document.getElementById("dealer").innerHTML = "";
+	document.getElementById("player").innerHTML = "";
+	document.getElementById("deck").innerHTML = "";
+	document.getElementById("table").innerHTML = "";
+
+	if (!cardtable || !cardtable.deck || !cardtable.deck.deck)
+		return;
+
+	for(let c of cardtable.deck.deck)
+	{
+		let div = c.played ? c.played : "deck";
+		add_card(div, c);
+	}
+}
+
 
 // if the URL does not have a webrtc offer, then we are
 // the dealer and can setup the data chanell
@@ -39,7 +80,8 @@ const is_webrtc_initiator = !url_params.has("webrtc_offer");
 if (is_webrtc_initiator)
 {
 	n = new DataChannel();
-	cardtable = new CardTable(num_cards, true);
+	is_dealer = true;
+	cardtable = new CardTable(num_cards, is_dealer);
 
 	n.offer_ready = (offer) => {
 		document.getElementById("webrtc-link").innerHTML = "<a href=" + document.location + "?webrtc_offer=" + offer + ">Link for other player</a>";
@@ -55,12 +97,16 @@ if (is_webrtc_initiator)
 	};
 
 	n.onopen = () => {
-		// when the other side connects, send them the deck
-		n.channel.send(cardtable.command("shuffle"));
+		// when the other side connects, hide the webrtc gui
+		document.getElementById("webrtc-ui").setAttribute("style", "display:none");
+		document.getElementById("game-ui").setAttribute("style", "display:block");
+
+		// and send them the deck
+		n.channel.send(cardtable.connected());
 	};
 } else {
 	n = new DataChannel(url_params.get("webrtc_offer"))
-	cardtable = new CardTable(num_cards, false);
+	cardtable = new CardTable(num_cards, is_dealer);
 
 	n.offer_ready = (answer) => {
 		let d = document.getElementById("webrtc-answer");
@@ -69,24 +115,32 @@ if (is_webrtc_initiator)
 		let b = document.getElementById("copy-answer");
 		b.setAttribute("style", "visibility:block");
 	};
+
+	n.onopen = () => {
+		// when the other side connects, hide the webrtc gui
+		document.getElementById("webrtc-ui").setAttribute("style", "display:none");
+		document.getElementById("game-ui").setAttribute("style", "display:block");
+	};
 }
 
 n.onmessage = (m) => {
 	console.log("RX", m.substr(0,64));
 
 	let resp = cardtable.command(m);
-	if (!resp)
-		return;
+	if (resp)
+	{
+		console.log("TX", resp.substr(0,64));
+		n.channel.send(resp);
+	}
 
-	console.log("TX", resp.substr(0,64));
-	n.channel.send(resp);
+	display_update();
 };
 
 </script>
 
-<div id="webrtc-link"></div>
 
-<form id="ui" onsubmit="return false">
+<form id="webrtc-ui" onsubmit="return false">
+<div id="webrtc-link"></div>
 <input id="webrtc-answer" />
 <input type="button" value="Copy Answer" id="copy-answer" style="visibility:hidden" onclick="
 	let copy_field = document.getElementById('webrtc-answer');
@@ -94,37 +148,26 @@ n.onmessage = (m) => {
 	copy_field.setSelectionRange(0,99999);
 	document.execCommand('copy');
 " />
-<input type="button" value="Shuffle" onclick="
-	console.log('Creating dealer');
-	d = new DeckDealer(52);
+</form>
 
-	console.log('Creating player');
-	p = new DeckPlayer(d.export());
+<div id="game-ui" style="display:none">
+<form id="ui" onsubmit="return false">
 
-	console.log('Importing shuffled deck');
-	d.import(p.export());
-
-	document.querySelector('#player').innerHTML='';
-	document.querySelector('#dealer').innerHTML='';
-"/>
-
-<input type="button" value="Deal to dealer" onclick="
+<input type="button" value="Draw a card" onclick="
 	let new_card = d.receive(p.deal());
 	if (new_card)
 		add_card('#dealer', Number(new_card));
 " />
 
-<input type="button" value="Dealer draw" onclick="
-	let new_card = d.receive(p.drawn(d.draw()));
-	if (new_card)
-		add_card('#dealer', Number(new_card));
+<input type="button" value="Deal a card (facedown)" onclick="
+	n.channel.send(cardtable.command('draw'));
+	display_update();
 " />
 
 
-<input type="button" value="Deal to player" onclick="
-	let new_card = p.receive(d.deal());
-	if (new_card)
-		add_card('#player', Number(new_card));
+<input type="button" value="Deal a card (faceup)" onclick="
+	n.channel.send(cardtable.command('draw=faceup'));
+	display_update();
 " />
 
 <input type="button" value="Player draw" onclick="
@@ -136,14 +179,19 @@ n.onmessage = (m) => {
 
 <table>
 <tr>
-<td>
-<div id="dealer" style="font-size:64px"></div>
-</td>
-<td>
-<div id="player" style="font-size:64px"></div>
-</td>
+<th>Deck</th>
+<th>Table</th>
+<th>Dealer</th>
+<th>Player</th>
+</tr>
+<tr>
+<td><div id="deck" style="font-size:16"></div></td>
+<td><div id="table" style="font-size:64px"></div></td>
+<td><div id="dealer" style="font-size:64px"></div></td>
+<td><div id="player" style="font-size:64px"></div></td>
 </tr>
 </table>
+</div>
 
 </body>
 </html>
