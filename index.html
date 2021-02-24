@@ -33,6 +33,11 @@
 	position: relative;
 	color: blue;
 }
+
+.card-button {
+	width: 128px;
+	height: 32px;
+}
 </style>
 </head>
 <body>
@@ -49,7 +54,7 @@ let is_dealer = false;
 
 function add_card(id, card)
 {
-	let new_card = document.createElement('div');
+	let new_card = document.createElement('span');
 
 	if (card.card == undefined)
 	{
@@ -204,37 +209,49 @@ n.onmessage = (m) => {
 <div id="game-ui" style="display:none">
 <form id="ui" onsubmit="return false">
 
-<input type="button" value="Draw a card (facedown)" onclick="n.channel.send('draw')" />
-<input type="button" value="Draw a card (faceup)" onclick="n.channel.send('draw=faceup')" />
-
-<input type="button" value="Deal a card (facedown)" onclick="
-	n.channel.send(cardtable.command('draw'));
-	display_update();
-" />
-
-<input type="button" value="Deal a card (faceup)" onclick="
-	n.channel.send(cardtable.command('draw=faceup'));
-	display_update();
-" />
-
 </form>
 
 <table>
 <tr>
-<th>Deck</th>
-<th>Table</th>
-<th>Dealer</th>
-<th>Player</th>
-<th>Discard</th>
+<th width="10%">Deck</th>
+<td></td>
+<td width="80%"><div id="deck" style="font-size:32px"></div></td>
 </tr>
 <tr>
-<td><div id="deck" style="font-size:32px"></div></td>
-<td><div id="table" style="font-size:64px"></div></td>
-<td><div id="dealer" style="font-size:64px"></div></td>
-<td><div id="player" style="font-size:64px"></div></td>
+<th>Dealer</th>
+<td>
+	<input type="button" class="card-button" value="DRAW" onclick="n.channel.send('draw')" /><br/>
+	<input type="button" class="card-button" value="FACEUP" onclick="n.channel.send('draw=faceup')" />
+</td>
+<td height="64px"><div id="dealer" style="font-size:64px"></div></td>
+</tr>
+<tr>
+<th>Player</th>
+<td>
+<input type="button" class="card-button" value="DRAW" onclick="
+	n.channel.send(cardtable.command('draw'));
+	display_update();
+" />
+<br/>
+<input type="button" class="card-button" value="FACEUP" onclick="
+	n.channel.send(cardtable.command('draw=faceup'));
+	display_update();
+" />
+<td height="64px"><div id="player" style="font-size:64px"></div></td>
+</td>
+</tr>
+<tr>
+<th>Discard</th>
 <td><div id="discard" style="font-size:32px"></div></td>
+<td></td>
+</tr>
+<tr>
+<th>Table</th>
+<td><div id="table" style="font-size:64px"></div></td>
+<td></td>
 </tr>
 </table>
+
 </div>
 
 </body>
