@@ -160,9 +160,11 @@ class DeckDealer
 		// with a valid commitment hash from dealer and player
 		player_card.played = 'dealer';
 		player_card.card = card;
+		player_card.player_nonce = player_nonce;
+		player_card.dealer_nonce = dealer_nonce;
 
 		console.log("dealer hand", this.deck.filter(c => c.played == 'dealer').map(c => c.card));
-		return card;
+		return player_card;
 	}
 
 	/*
@@ -273,7 +275,6 @@ class DeckPlayer
 			throw card + " card not in dealer deck!";
 
 		const player_card = player_cards[0];
-		console.log(player_card);
 
 		if (player_card.played && player_card.played != 'requested')
 			throw card + " card already played!";
@@ -283,7 +284,7 @@ class DeckPlayer
 
 		console.log("player hand", this.deck.filter(c => c.played == 'player').map(c => c.card));
 
-		return card;
+		return player_card;
 	}
 
 	/*
