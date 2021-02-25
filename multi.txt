@@ -1,0 +1,53 @@
+like two-player, a dealer and N-1 players.
+- dealer computes a nonce for each card
+- cards should also be self-MAC'ing.
+- card = dealer_nonce || value
+- set of values are known, set of nonce's are not
+- dealer shuffles deck
+- dealer deck and the H(dealer_nonce || value) values
+
+each player then, in turn:
+- chooses a nonce for each card
+- computes their chained hash name, H(nonce_i || H(nonce_j || H(nonce_k || ...)))
+- encrypts the card with their key
+- shuffles the deck and sends it along with the new names to the next player
+
+final deck reaches the dealer, shuffled and hashed by each party
+at this point each player knows their mapping to the previous player's deck,
+and the dealer has a set of cards with a final name that includes
+every player's nonce.
+
+to deal/draw a card:
+- choose a final name (could be dealer or player choice)
+  - dealer decrypts the card
+  - publishes the decrypted version
+- last player looks up the name in their map
+  - publishes their nonce and the prior name
+  - everyone validates that H(nonce || name) is the expected name
+  - publishes the card decrypted with their key
+- next player looks up the name, etc
+- if this is the destination player
+  - do not publish the nonce
+  - do not publish the decrypted version
+- that way the next player doesn't know the name to lookup
+- so the players continue to decrypt all the way around
+- player is left with card encrypted with their key
+- player decrypts the card, learns dealer nonce
+- player knows their nonce and the previous player's name for the card
+- can prove they know the card by publishing the value, dealer nonce, their nonce,
+and the previous name.
+
+a cheater could try to publish a fake nonce, except that the expected name
+would not validate along the way.
+
+a cheater could publish a fake decrypt, the player would detect that
+the card name does not appear in the dealer hashes.
+if everyone publishes their keys, then it is possible to identify
+the cheater (either in the fake decrypt stage or in the initial dealer
+stage) (but the game is over).
+
+the player might try to cheat and claim there is an error, but they
+can't publish a key that would validate this card.
+
+todo: could there be a round at the beginning to ensure that all of the
+dealing stages are correct?  a multi-party cut-n-choose scenario?
