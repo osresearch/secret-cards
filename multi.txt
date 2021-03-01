@@ -6,8 +6,16 @@ like two-player, a dealer and N-1 players.
 - dealer shuffles deck
 - dealer deck and the H(dealer_nonce || value) values
 
-each player then, in turn:
-- chooses a nonce for each card
+to ensure that the deck is fair, dealer generates (N-1)*k+1 decks
+- each player requests k decks to be unblinded (non-overlapping)
+- dealer reveals those key pairs
+- dealer reveals key pair, everyone validates that the decks are complete
+- even if N-m of the players are cheating, the odds of a false deck
+being selected are 2^-m*k for the m honest players.
+- one honest player is sufficient if k is large enough.
+
+now that the deck is established, each player then, in turn:
+- chooses a secret nonce for each card
 - computes their chained hash name, H(nonce_i || H(nonce_j || H(nonce_k || ...)))
 - encrypts the card with their key
 - shuffles the deck and sends it along with the new names to the next player
@@ -29,25 +37,67 @@ to deal/draw a card:
 - if this is the destination player
   - do not publish the nonce
   - do not publish the decrypted version
-- that way the next player doesn't know the name to lookup
+  - that way the next player doesn't know the name to lookup
 - so the players continue to decrypt all the way around
 - player is left with card encrypted with their key
-- player decrypts the card, learns dealer nonce
-- player knows their nonce and the previous player's name for the card
-- can prove they know the card by publishing the value, dealer nonce, their nonce,
-and the previous name.
+- player decrypts the card with their own key, learns dealer nonce and value
 
-a cheater could try to publish a fake nonce, except that the expected name
-would not validate along the way.
+to reveal the card:
+- the player already knows the mapping of the previous player to their card
+- the player prove they know the card by publishing the value, dealer nonce, their nonce, and the previous name.
+- the table knows that the player has H(nonce || previous name)
+- the table knows that previous name is a valid card
+- the table can see that H(dealer nonce || value) is a valid card
+- the previous player resumes the draw path by publishing their nonce and the prior name
+- each player in turn reveals their nonce and prior name up to the dealer
+- special case: if the player is the dealer, then revealing their nonce is sufficient since
+all the other player nonces have been revealed when they drew the card.
 
-a cheater could publish a fake decrypt, the player would detect that
-the card name does not appear in the dealer hashes.
-if everyone publishes their keys, then it is possible to identify
+revealing fake cards:
+- player can't reveal a different card since they don't know dealer nonces to create valid names
+- player1 in collusion with the dealer knows the nonces and could claim they received a specific card
+since they know the dealer's name for the card and the nonce
+- however they can't generate a valid chain of hashes since the table knows they didn't receive
+H(nonce || dealer name)
+
+subverting the deal:
+- a cheater could publish a fake decrypt along the way, the player would detect that
+the hash of the decrypted card name does not appear in the dealer hashes.
+- the player could declare a misdeal, ask everyone to publish their nonces
+- this reaches back to the dealer hash, revealing card value
+- if everyone but the player is dishonest, they still can't reveal fake hashes
+- this doesn't reveal who messed up the decryption
+- and the table now knows the player's new card
+- but does not reveal any other cards
+- could be used to end the game early if the player did not like their card
+
+- if everyone publishes their keys, then it is possible to identify
 the cheater (either in the fake decrypt stage or in the initial dealer
-stage) (but the game is over).
+stage) (but the game is over and it leaks info about the hands).
 
 the player might try to cheat and claim there is an error, but they
 can't publish a key that would validate this card.
 
 todo: could there be a round at the beginning to ensure that all of the
 dealing stages are correct?  a multi-party cut-n-choose scenario?
+
+shuffle stage cheat:
+all the parties know all the dealer hashes, except the real player
+create fake cards; when player decrypts it looks valid.
+
+dealing stage cheat:
+player 1 could try to conspire with the dealer;
+they know the dealer nonce and could publish it, plus
+their nonce.  but the honest player would be able to
+show the chain of publishes nonces would not result in
+the final name.
+
+player n could try to conspire by publishing a different
+dealer card, but the chain from the dealer to it would be
+wrong and result in the wrong name.
+
+((m^A % n) ^ B) ^ C == m^(A*B*C)
+m^A m^B m^C = m^(A+B+C)
+
+
+todo: could players commit to their decryptions?
