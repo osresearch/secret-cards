@@ -1,4 +1,73 @@
+alternate deal protocol that avoids cut-n-choose dealing step
+by publishing all cards ahead of time.
+
+player 1 proposes a deck of cards c with high-entropy in each card c_i
+player 1 then:
+- creates a SRA key K_1
+- for each card c_i,
+  - choose a random nonce n^1_i
+  - compute H^1_i = h(n^1_i || c_i)
+  - encrypt C^1_i = e(K_1, c_i)
+- choose a random permutation O_1
+- published the shuffled deck O_1(C) and hashes O_1(H)
+
+each player j in turn
+- creates an SRA key K_j
+- for each encrypted card C_i = O_{j-1}(C)_i and hash O_{j-1}(H)_i
+  - choose a random nonce n^j_i
+  - compute H^j_i = h(n^j_i || O_{j-1}(H)_i) = h(n^{j-1}_{O_{j-1}(i)} || ... h(n_1 || c_z))
+  - encrypt C^j_i = e(K_j, O_{j-1}(C)_i) = e(K_j, e(K_{j-1}, e(K_{j-2}, ... e(K_1, n^1_i || h(c_z)))))
+- choose a random permutation O_j
+- publish the shuffled deck O_j(C) and names O_j(H)
+
+dealing/drawing a card to player j:
+- choose a final name from the deck Z = O_N(H^{N-1})_i (which were published by the last player)
+- each player N down to j+1:
+  - player N publishes their nonce n^N_i that corresponds to this name and the previous name O_{N-1}(H^{N-2})
+  - everyone verifies that Z = h(n^N_i || O_{N-1}(H^{N-2})_?)
+- player j now knows their own nonce and the previous player's name for this card, but keep them secret
+- everyone knows which C^j_z = e(K_j, ... c_z) since it corresponded to the previous name
+- each player j-1 down to 1:
+  - decrypts d(K_{j-1}, C^j_z), passes it down
+  - player j-1 does not learn the nonces that correspond to this card
+- now the card is encrypted only with player j's key K_j.
+- player j can decrypt the final value
+- and verify that the result is in the official set
+- if not in the original set:
+  - either a decrypt was faked (could be hash committed?)
+  - or an original encryption was faked (could be prevented with a cut-n-choose at deal time)
+
+player j plays a card:
+- publish the card c_z, their nonce n^j_i and the previous hash of the card Z = O_{k-1}(N^{j-1})
+- everyone verifies that player j had previousl drawn h(n^j_i || Z)
+- each player k from j-1 down to 1:
+  - player k publishes their nonce n^k_i that corresponds to this name and the previous name O_{k-1}(H^{k-2})
+  - everyone verifies that Z_k = h(n^k_i || O_{k-1}(H^{k-2})_?)
+- everyone verifies that c_z = n^1_z
+
+player j discards a card:
+- publish the final name
+- everyone verifies that player j had previously drawn that card
+
+still need a cut-n-choose deal protocol:
+- need to ensure a full deck
+- dealer could still try to cheat:
+  - publish all the same card (but why?)
+  - publish bad encrypts
+- players could publish bad encrypts
+- revealing K-1 decks would provide 2^{-(k-1)} odds against it
+
+still need a decrypt commitment protocol
+- players could publish bad decrypts
+- failure would be detected, but not which player without revealing hands
+
+
+
+----
+
 like two-player, a dealer and N-1 players.
+dealer generates (N-1)*k+1 decks:
+- for each deck the dealer creates an SRA key
 - dealer computes a nonce for each card
 - cards should also be self-MAC'ing.
 - card = dealer_nonce || value
@@ -6,7 +75,36 @@ like two-player, a dealer and N-1 players.
 - dealer shuffles deck
 - dealer deck and the H(dealer_nonce || value) values
 
-to ensure that the deck is fair, dealer generates (N-1)*k+1 decks
+for each deck, each player in turn:
+- creates an SRA key
+- chooses a secret nonce for each card
+- computes their name for the card as H(their nonce || previous name), which results in a chain of hashes
+H(nonce_i || H(nonce_j || H(nonce_k || ... || H(dealer_nonce || value)))
+- encrypts the card with their key, resulting in E(k_i, E(k_j, E(k_k, ... E(k_dealer, dealer_nonce || value))))
+- chooses a permutation of the order of the previous player's deck
+- sends the shuffled, encrypted deck of cards along with their new names to the next player
+- the other players do not learn the nonces or the ordering,
+- so only this player can map the previous player's names to the new names
+
+the final decks reaches the dealer, shuffled and hashed by each party.
+everyone knows all of the final names and 
+
+the last player publishes H(nonce || D(k_N, 
+the dealer does one last shuffle and nonce generation (with a new SRA key,
+as if they were a normal player), and publishes
+also decrypts with the dealer key, re-encrypting with new key
+publish hash of decrypt || new nonce
+decrypt, etc
+until the first player, who doesn't publish decrypt
+the deck with the final names as well as the hash of their decryption of the card.
+each player in turn published the hash of their decryption, all the way back
+to the dealer, who does not publish the final hash.
+at this point each player knows their mapping to the previous player's deck,
+and the dealer has a set of cards with a final name that includes
+every player's nonce.
+
+to ensure that the deck is fair and that the players will not cheat,
+- the last player publishes 
 - each player requests k decks to be unblinded (non-overlapping)
 - dealer reveals those key pairs
 - dealer reveals key pair, everyone validates that the decks are complete
@@ -15,43 +113,41 @@ being selected are 2^-m*k for the m honest players.
 - one honest player is sufficient if k is large enough.
 
 now that the deck is established, each player then, in turn:
-- chooses a secret nonce for each card
-- computes their chained hash name, H(nonce_i || H(nonce_j || H(nonce_k || ...)))
-- encrypts the card with their key
-- shuffles the deck and sends it along with the new names to the next player
-
-final deck reaches the dealer, shuffled and hashed by each party
-at this point each player knows their mapping to the previous player's deck,
-and the dealer has a set of cards with a final name that includes
-every player's nonce.
 
 to deal/draw a card:
-- choose a final name (could be dealer or player choice)
+- choose a card by its final name (could be dealer or player choice)
   - dealer decrypts the card
-  - publishes the decrypted version
-- last player looks up the name in their map
-  - publishes their nonce and the prior name
-  - everyone validates that H(nonce || name) is the expected name
-  - publishes the card decrypted with their key
+  - publishes the decrypted version D(k_dealer, E(k_n, E(k_n-1, .. E(k_dealer, dealer_nonce || value))))
+  - (which effectively removes the dealer's encryption from the card)
+  - they do not learn anything about the card, since it still has N-1 layers of encryption
+  - dealer does not know the nonces used, so they do not know which card this is
+- player N-1 looks up the name in their map
+  - publishes their nonce and the prior name N-2
+  - everyone validates that H(nonce N-1 || name N-2) is the expected name (not cheatable)
+  - publishes the card decrypted with their key (cheatable)
 - next player looks up the name, etc
 - if this is the destination player
-  - do not publish the nonce
-  - do not publish the decrypted version
-  - that way the next player doesn't know the name to lookup
+  - they do not publish their nonce
+  - that way the next player doesn't know which card it maps to in their deck
+  - they do not publish the decrypted version of the card
+  - that way the card remains encrypted with their key, after everyone else removes theirs
 - so the players continue to decrypt all the way around
 - player is left with card encrypted with their key
 - player decrypts the card with their own key, learns dealer nonce and value
+- the other players learn the nonces from N-1 to the player+1
 
 to reveal the card:
-- the player already knows the mapping of the previous player to their card
+- the player already knows the mapping of the previous player's card name to their card
 - the player prove they know the card by publishing the value, dealer nonce, their nonce, and the previous name.
-- the table knows that the player has H(nonce || previous name)
-- the table knows that previous name is a valid card
-- the table can see that H(dealer nonce || value) is a valid card
+- the table knows that the player has H(nonce || previous name) since that was the last name published
+(and they can compute the chain all the way to the final name N-1)
+- the table knows that previous name is a valid card from the previous player's shuffled deck
+- the table can see that H(dealer nonce || value) is a valid card since it was in the original dealer deck
 - the previous player resumes the draw path by publishing their nonce and the prior name
 - each player in turn reveals their nonce and prior name up to the dealer
 - special case: if the player is the dealer, then revealing their nonce is sufficient since
-all the other player nonces have been revealed when they drew the card.
+all the other player nonces have been revealed when they drew the card.  The table can compute
+the chain of hashed nonces all the way to the final name, which proves that the dealer drew this card.
 
 revealing fake cards:
 - player can't reveal a different card since they don't know dealer nonces to create valid names
@@ -78,8 +174,7 @@ stage) (but the game is over and it leaks info about the hands).
 the player might try to cheat and claim there is an error, but they
 can't publish a key that would validate this card.
 
-todo: could there be a round at the beginning to ensure that all of the
-dealing stages are correct?  a multi-party cut-n-choose scenario?
+---
 
 shuffle stage cheat:
 all the parties know all the dealer hashes, except the real player
