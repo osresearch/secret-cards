@@ -1,6 +1,7 @@
 /*
  * From https://github.com/LinusU/crypto-digest-sync
  */
+(function (exports) {
 'use strict'
 
 const K = new Uint32Array([
@@ -137,7 +138,11 @@ function sha256(buffer)
   return output; //.buffer
 }
 
-module.exports = {
-sha256: (buffer) => sha256(buffer),
-sha256hex: (buffer) => Array.from(sha256(buffer)).map(c => ('00' + c.toString(16)).slice(-2) ).join(''),
-};
+function sha256hex(buffer)
+{
+	return Array.from(sha256(buffer)).map(c => ('00' + c.toString(16)).slice(-2) ).join('')}
+
+exports.sha256 = sha256;
+exports.sha256hex = sha256hex;
+
+})(typeof exports === 'undefined' ? this['sha256']={} : exports);
