@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
   <head>
-    <title>Socket.IO chat</title>
+    <title>secret.cards</title>
     <style>
       body { margin: 0; padding-bottom: 3rem; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
 
@@ -16,6 +16,7 @@
     </style>
   </head>
   <body>
+    <h1 id='playerCount'>0</h1>
     <ul id="messages"></ul>
     <form id="form" action="">
       <input id="input" autocomplete="off" /><button>Send</button>
@@ -23,22 +24,77 @@
     <script src="/socket.io/socket.io.js"></script>
     <script>
 	var socket = io();
+	let key = null;
+	let players = null;
+
+function array2hex(bytes)
+{
+	return new Uint8Array(bytes)
+		.map( c => ('00' + c.toString(16)).slice(-2) )
+		.join('');
+}
+
+	window.crypto.subtle.generateKey(
+		{
+			name: "ECDSA",
+			namedCurve: "P-384"
+		},
+		true,
+		["sign", "verify"]
+	).then((k) => {
+		console.log("Key created", k);
+		key = k;
+		return window.crypto.subtle.exportKey('jwk', k.publicKey);
+	}).then((jwk) => {
+		socket.emit('register', jwk);
+	});
 
 	var messages = document.getElementById('messages');
 	var form = document.getElementById('form');
 	var input = document.getElementById('input');
+
 	form.addEventListener('submit', (e) => {
 		e.preventDefault();
-		if (input.value)
-			socket.emit('chat message', input.value);
+		if (!input.value)
+			return;
+		let msg = input.value;
+		let msg_bytes = new TextEncoder().encode(msg);
 		input.value = '';
+
+		// generate a signature on the msg
+		// and send it when it is ready
+		window.crypto.subtle.sign(
+			{
+				name: "ECDSA",
+				hash: { name: "SHA-256" },
+			},
+			key.privateKey,
+			msg_bytes
+		).then((sig) => {
+			let sig_hex = array2hex(sig);
+			console.log("chat:", msg, sig, sig_hex);
+			socket.emit('chat', {
+				msg: msg,
+				sig: sig_hex,
+			});
+		});
 	});
 
-	socket.on('chat message', (msg) => {
+	socket.on('chat', (msg) => {
 		var item = document.createElement('li');
 		item.textContent = msg;
 		messages.appendChild(item);
 		window.scrollTo(0, document.body.scrollHeight);
+	});
+
+	socket.on('players', (new_players) => {
+		// update the list of players; if there is a game in
+		// action we need to signal an abnormal exit
+		players = new_players;
+		console.log(players);
+		let counter = document.getElementById('playerCount');
+		if (counter) counter.textContent = Object.keys(players).length;
+		
 	});
     </script>
   </body>
