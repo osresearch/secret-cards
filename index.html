@@ -20,6 +20,7 @@
     <script src="/socket.io/socket.io.js"></script>
     <script src="sha256.js"></script>
     <script src="utils.js"></script>
+    <script src="channel.js"></script>
     <script src="sra.js"></script>
     <script src="cardtable.js"></script>
   </head>
@@ -28,6 +29,8 @@
       <span id='playerCount'>0</span> players
       <ul id='players'></ul>
     </div>
+
+    <button onclick="shuffle()">Shuffle</button>
 
     <ul id="messages"></ul>
     <form id="form" action="">
