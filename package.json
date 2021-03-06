@@ -1,0 +1,6 @@
+{
+  "name": "secret-cards",
+  "version": "0.0.1",
+  "description": "Mental Poker with an untrusted dealer",
+  "dependencies": {}
+}
