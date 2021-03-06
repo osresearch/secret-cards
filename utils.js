@@ -122,10 +122,10 @@ function b64decode(s)
 /*
  * Sync compute sha256 of a bigint returning a bigint
  */
-function sha256(m,l)
+function sha256bigint(m,l)
 {
 	let a = bigint2bytes(m,l);
-	let hash = sha256_raw(a);
+	let hash = sha256.sha256(a);
 	return array2bigint(new Uint8Array(hash));
 }
 
@@ -136,5 +136,6 @@ exports.bigint2bytes  =  bigint2bytes;
 exports.randomBigint  =  randomBigint;
 exports.randomInt  =  randomInt;
 exports.shuffle  =  shuffle;
+exports.sha256bigint  =  sha256bigint;
 
 })(typeof exports === 'undefined' ? this['utils']={} : exports);
