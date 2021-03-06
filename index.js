@@ -12,14 +12,23 @@
  * as well as the multiplayer changes.
  *
  * During setup all of the players send in their public keys,
- * which are then re-broadcast
+ * which are then re-broadcast as the player array.  The server
+ * does not interpret them at all.
+ *
+ * Initially all the cards are "face up", which allows the players
+ * to agree on the number and contents.  A player can propose a
+ * shuffling of a subset of the cards, along with the set of
+ * players to play the game.
+ *
+ * (This can be done at any time as well with partial decks,
+ * to allow remixing of things, etc, although reshuffling face up
+ * and facedown cards needs to be worked out)
  */
 const express = require('express');
 const app = express();
 const http = require('http').createServer(app);
 const io = require('socket.io')(http);
 const sha256 = require('./sha256').sha256hex;
-
 
 let players = {};
 
@@ -44,15 +53,16 @@ http.listen(4423, () => {
 	console.log('listening on *:4423');
 });
 
-
 /*
  * Turn the ECDSA public key x and y coordinates into a hash
+ * This does not have to match the one used by the clients.
  */
 function jwk2id(jwk)
 {
 	let id = jwk.x + "|" + jwk.y;
 	return sha256(id.split(''));
 }
+
 
 /*
  * A new player is joining; the totals and let everyone know the current set
@@ -72,7 +82,7 @@ function player_register(socket, jwk)
 	socket.key = jwk;
 	players[id] = jwk;
 
-	io.emit('players', players);
+	io.emit('players', Object.values(players));
 	console.log(players);
 }
 
