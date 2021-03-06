@@ -13,13 +13,20 @@
       #messages { list-style-type: none; margin: 0; padding: 0; }
       #messages > li { padding: 0.5rem 1rem; }
       #messages > li:nth-child(odd) { background: #efefef; }
+
+	.player-sequence { color: #000; }
+	.player-name { color: #888; }
     </style>
     <script src="/socket.io/socket.io.js"></script>
     <script src="sha256.js"></script>
     <script src="cardtable.js"></script>
   </head>
   <body>
-    <h1 id='playerCount'>0</h1>
+    <div>
+      <span id='playerCount'>0</span> players
+      <ul id='players'></ul>
+    </div>
+
     <ul id="messages"></ul>
     <form id="form" action="">
       <input id="input" autocomplete="off" /><button>Send</button>
