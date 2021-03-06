@@ -47,6 +47,11 @@ io.on('connection', (socket) => {
 		console.log('chat:', msg.msg);
 		io.emit('chat', msg);
 	});
+
+	socket.on('shuffle', (msg) => {
+		console.log('shuffle:', msg.msg);
+		io.emit('shuffle', msg);
+	});
 });
 
 http.listen(4423, () => {
