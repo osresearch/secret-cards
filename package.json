@@ -3,6 +3,7 @@
   "version": "0.0.1",
   "description": "Mental Poker with an untrusted dealer",
   "dependencies": {
-    "express": "^4.17.1"
+    "express": "^4.17.1",
+    "socket.io": "^3.1.2"
   }
 }
