@@ -4,6 +4,9 @@
 "use strict";
 let deck = null;
 let final_deck = null;
+let final_player = null;
+let prev_player = null;
+let drawn_card = null;
 
 function shuffle(num_cards=52)
 {
@@ -23,6 +26,106 @@ function shuffle(num_cards=52)
 	});
 }
 
+function draw_random_card(deck)
+{
+	for(let c of deck)
+	{
+		if (!c.played)
+			return c.name;
+	}
+
+	return null;
+}
+
+function draw_card(name=null)
+{
+	if (name == null)
+	{
+		// find a random card that is not already played
+		name = draw_random_card(final_deck);
+		if (name == null)
+			return;
+	}
+
+	// todo: validate that the card we eventually receive is the right one
+	drawn_card = name;
+	const card_name = utils.bigint2hex(name, 64);
+
+	send_signed('draw', {
+		dest: public_name,
+		source: final_player,
+		final_name: card_name,
+		name: null,
+		nonce: null,
+	});
+}
+
+socket.on('draw', (msg) => recv_signed(msg).then((valid) => {
+	const draw = msg.msg;
+	if (!valid)
+		return;
+
+	console.log("draw", msg);
+
+	const card = final_deck[draw.name];
+	if (!card)
+	{
+		console.log("UNKNOWN CARD", msg);
+		return;
+	}
+
+	if (draw.source == final_player)
+	{
+		// mark the destination as the eventual owner of this card
+		// if this is a 
+		card.player = draw.dest;
+	} else {
+		// this is in the chain, so validate the hash and update the deck
+		const nonce = BigInt("0x" + draw.nonce);
+		const name = BigInt("0x" + draw.name);
+		const full_card = nonce << 256n | name;
+		const next_name = utils.sha256bigint(full_card, 64);
+		if (next_name != card.name)
+		{
+			console.log("BAD NONCE", msg);
+			return;
+		}
+		card.name = name;
+		card.nonces.push(nonce);
+	}
+
+	if (draw.source != public_name)
+		return;
+
+	if (draw.dest == public_name)
+	{
+		// this is destined for us
+	// todo: ensure that dest is before me in the order
+	// this one is for me to decrypt and fill in
+	if (draw.dest != public_name)
+	{
+		const card = deck[draw.name])
+		if (!card)
+		{
+			console.log("UNKNOWN CARD", draw);
+			return;
+		}
+
+		if (card.played)
+		{
+			console.log("PLAYED CARD", draw);
+			return;
+		}
+
+		const nonce = BigInt("0x" + draw.nonce);
+		const full_card = nonce << 256n | card.name;
+			let name = utils.sha256bigint(full_card, 64); // 2 * 32 bytes for each hash
+		send_signed('draw', {
+			dest: msg.msg.dest,
+			source: prev_player,
+			name: 
+		});
+
 socket.on('shuffle', (msg) => recv_signed(msg).then((valid) => {
 	const shuffle = msg.msg;
 	if (!valid)
@@ -35,10 +138,20 @@ socket.on('shuffle', (msg) => recv_signed(msg).then((valid) => {
 		return;
 
 	// once all the passes are over, the final deck is ready
+	// todo: validate that the deck only has hashes
 	if (shuffle.pass == shuffle.order.length)
 	{
-		final_deck = shuffle.deck;
-		console.log("FINAL DECK", final_deck);
+		final_deck = shuffle.deck.map(c => {
+			return {
+				final_name: c.name,
+				nonces: [],
+				name: null,
+				value: null,
+				played: false,
+			};
+		});
+		final_player = shuffle.order[shuffle.pass - 1];
+		console.log("FINAL DECK", player_order, final_deck);
 	}
 
 	// if we are not the shuffler for this round, we're done
@@ -52,7 +165,8 @@ socket.on('shuffle', (msg) => recv_signed(msg).then((valid) => {
 	// todo: validate that the previous player was the source of this message
 	// todo: implement cut-n-choose protocol to ensure fairness
 
-	deck = new Deck(msg.key, shuffle.deck);
+	deck = new Deck(shuffle.deck);
+	prev_player = msg.key;
 
 	send_signed('shuffle', {
 		deck: deck.export(),
@@ -63,9 +177,9 @@ socket.on('shuffle', (msg) => recv_signed(msg).then((valid) => {
 
 class Deck
 {
-	constructor(prev_player=null, prev_deck=null)
+	constructor(prev_deck=null)
 	{
-		if (prev_player == null && prev_deck == null)
+		if (prev_deck == null)
 			prev_deck = this.new_deck();
 
 		this.sra = sra.SRA();
@@ -81,7 +195,6 @@ class Deck
 			let name = utils.sha256bigint(full_card, 64); // 2 * 32 bytes for each hash
 
 			let card = {
-				prev_player: prev_player,
 				prev_name: prev_name, // what the previous player called it
 				encrypted: encrypted, // encrypted with everyone's key up to me
 				nonce: nonce,
