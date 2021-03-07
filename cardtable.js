@@ -133,7 +133,7 @@ channel.on('shuffle', (status,msg) => {
 	if (!status.valid)
 		return;
 
-	console.log("shuffle", status.key, msg);
+	console.log("shuffle", msg.pass, status.peer.name);
 
 	// always validate the initial deck
 	if (msg.pass == 0 && !new_deck_validate(msg.deck))
@@ -153,7 +153,7 @@ channel.on('shuffle', (status,msg) => {
 			};
 		});
 		final_player = msg.order[msg.pass - 1];
-		console.log("FINAL DECK", final_deck);
+		console.log("FINAL DECK", status.peer.name, final_deck);
 	}
 
 	// if we are not the shuffler for this round, we're done
@@ -169,6 +169,8 @@ channel.on('shuffle', (status,msg) => {
 
 	deck = new Deck(msg.deck);
 	prev_player = msg.key;
+
+	console.log("my turn to shuffle", deck);
 
 	channel.emit('shuffle', {
 		deck: deck.export(),

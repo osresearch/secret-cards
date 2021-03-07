@@ -76,7 +76,7 @@ class SecureChannel
 			getEncoding(JSON.stringify(signed_msg))
 		).then((sig) => {
 			let sig_hex = array2hex(sig);
-			console.log(dest, signed_msg, sig, sig_hex);
+			//console.log(dest, signed_msg, sig, sig_hex);
 
 			// add the signature to the signed message and send it
 			signed_msg.sig = sig_hex;
@@ -116,14 +116,14 @@ class SecureChannel
 		// the key claims to be from a known peer
 		// we can't trust the server to fill in a peer,
 		// so we use the hash of the public key.
-		status.peer = msg.peer;
+		status.peer = peer;
 
 		let signed_msg = JSON.stringify({
 			msg: msg.msg,
 			seq: msg.seq,
 			key: msg.key,
 		});
-		console.log("signed=", signed_msg);
+		//console.log("signed=", signed_msg);
 
 		return window.crypto.subtle.verify(
 			this.key_param,
@@ -256,6 +256,8 @@ class SecureChannel
 			peer_list.appendChild(it);
 */
 		}
+
+		console.log("PEERS:", Object.values(this.peers).map(p => p.name));
 
 /*
 		// update the total peer count
