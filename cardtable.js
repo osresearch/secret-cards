@@ -19,7 +19,7 @@ function shuffle(num_cards=52)
 	let deck = new_deck(); // not encrypted
 	let order = utils.shuffle(Object.keys(players));
 
-	send_signed('shuffle', {
+	channel.emit('shuffle', {
 		deck: deck,
 		order: order,
 		pass: 0,
@@ -51,7 +51,7 @@ function draw_card(name=null)
 	drawn_card = name;
 	const card_name = utils.bigint2hex(name, 64);
 
-	send_signed('draw', {
+	channel.emit('draw', {
 		dest: public_name,
 		source: final_player,
 		final_name: card_name,
@@ -60,29 +60,28 @@ function draw_card(name=null)
 	});
 }
 
-socket.on('draw', (msg) => recv_signed(msg).then((valid) => {
-	const draw = msg.msg;
-	if (!valid)
+channel.on('draw', (status,msg) => {
+	if (!status.valid)
 		return;
 
 	console.log("draw", msg);
 
-	const card = final_deck[draw.name];
+	const card = final_deck[msg.name];
 	if (!card)
 	{
 		console.log("UNKNOWN CARD", msg);
 		return;
 	}
 
-	if (draw.source == final_player)
+	if (msg.source == final_player)
 	{
 		// mark the destination as the eventual owner of this card
 		// if this is a 
-		card.player = draw.dest;
+		card.player = msg.dest;
 	} else {
 		// this is in the chain, so validate the hash and update the deck
-		const nonce = BigInt("0x" + draw.nonce);
-		const name = BigInt("0x" + draw.name);
+		const nonce = BigInt("0x" + msg.nonce);
+		const name = BigInt("0x" + msg.name);
 		const full_card = nonce << 256n | name;
 		const next_name = utils.sha256bigint(full_card, 64);
 		if (next_name != card.name)
@@ -94,54 +93,57 @@ socket.on('draw', (msg) => recv_signed(msg).then((valid) => {
 		card.nonces.push(nonce);
 	}
 
-	if (draw.source != public_name)
+	if (msg.source != public_name)
 		return;
 
-	if (draw.dest == public_name)
+	if (msg.dest == public_name)
 	{
 		// this is destined for us
+	}
+
 	// todo: ensure that dest is before me in the order
 	// this one is for me to decrypt and fill in
-	if (draw.dest != public_name)
+	if (msg.dest != public_name)
 	{
-		const card = deck[draw.name])
+		const card = deck[msg.name];
 		if (!card)
 		{
-			console.log("UNKNOWN CARD", draw);
+			console.log("UNKNOWN CARD", msg);
 			return;
 		}
 
 		if (card.played)
 		{
-			console.log("PLAYED CARD", draw);
+			console.log("PLAYED CARD", msg);
 			return;
 		}
 
-		const nonce = BigInt("0x" + draw.nonce);
+		const nonce = BigInt("0x" + msg.nonce);
 		const full_card = nonce << 256n | card.name;
 			let name = utils.sha256bigint(full_card, 64); // 2 * 32 bytes for each hash
-		send_signed('draw', {
+		channel.emit('draw', {
 			dest: msg.msg.dest,
 			source: prev_player,
-			name: 
+			name: "foo",
 		});
+	}
+});
 
-socket.on('shuffle', (msg) => recv_signed(msg).then((valid) => {
-	const shuffle = msg.msg;
-	if (!valid)
+channel.on('shuffle', (status,msg) => {
+	if (!status.valid)
 		return;
 
-	console.log("shuffle", msg);
+	console.log("shuffle", status.key, msg);
 
 	// always validate the initial deck
-	if (shuffle.pass == 0 && !new_deck_validate(shuffle.deck))
+	if (msg.pass == 0 && !new_deck_validate(msg.deck))
 		return;
 
 	// once all the passes are over, the final deck is ready
 	// todo: validate that the deck only has hashes
-	if (shuffle.pass == shuffle.order.length)
+	if (msg.pass == msg.order.length)
 	{
-		final_deck = shuffle.deck.map(c => {
+		final_deck = msg.deck.map(c => {
 			return {
 				final_name: c.name,
 				nonces: [],
@@ -150,12 +152,12 @@ socket.on('shuffle', (msg) => recv_signed(msg).then((valid) => {
 				played: false,
 			};
 		});
-		final_player = shuffle.order[shuffle.pass - 1];
-		console.log("FINAL DECK", player_order, final_deck);
+		final_player = msg.order[msg.pass - 1];
+		console.log("FINAL DECK", final_deck);
 	}
 
 	// if we are not the shuffler for this round, we're done
-	if (shuffle.order[shuffle.pass] != public_name)
+	if (msg.order[msg.pass] != channel.public_name)
 		return;
 
 	// todo: validate that there was an initial pass
@@ -165,15 +167,15 @@ socket.on('shuffle', (msg) => recv_signed(msg).then((valid) => {
 	// todo: validate that the previous player was the source of this message
 	// todo: implement cut-n-choose protocol to ensure fairness
 
-	deck = new Deck(shuffle.deck);
+	deck = new Deck(msg.deck);
 	prev_player = msg.key;
 
-	send_signed('shuffle', {
+	channel.emit('shuffle', {
 		deck: deck.export(),
-		order: shuffle.order,
-		pass: shuffle.pass + 1,
+		order: msg.order,
+		pass: msg.pass + 1,
 	});
-}));
+});
 
 class Deck
 {
