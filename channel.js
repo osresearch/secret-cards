@@ -164,7 +164,7 @@ class SecureChannel
 		if (this.public_key)
 		{
 			console.log("RECONNECTED");
-			this.socket.emit('register', public_key);
+			this.socket.emit('register', this.public_key);
 			return;
 		}
 
@@ -200,6 +200,7 @@ class SecureChannel
 			// don't trust the server's hash; do it ourselves
 			let id = jwk2id(new_peer);
 			new_peer.id = id;
+			new_peer.name = words.bigint2words("0x" + id);
 			new_peer.seq = -1;
 			new_peer.cheats = 0;
 			new_peers[id] = new_peer;

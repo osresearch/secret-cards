@@ -29,6 +29,7 @@ const app = express();
 const http = require('http').createServer(app);
 const io = require('socket.io')(http);
 const sha256 = require('./sha256').sha256hex;
+const words = require('./words').bigint2words;
 
 let peers = {};
 
@@ -38,7 +39,7 @@ app.get('/', (req, res) => {
 app.use(express.static('.'));
 
 io.on('connection', (socket) => {
-	console.log('connected');
+	console.log('connected', socket.handshake.address);
 	socket.on('disconnect', () => peer_disconnect(socket))
 	socket.on('register', (msg) => peer_register(socket, msg));
 
@@ -79,13 +80,14 @@ function peer_register(socket, jwk)
 	let id = jwk2id(jwk);
 	if (socket.key)
 	{
-		console.log("replacing key");
 		let old_id = jwk2id(socket.key);
+		console.log(words("0x"+old_id) + ": replacing key");
 		delete peers[old_id];
 	}
 
 	socket.key = jwk;
 	peers[id] = jwk;
+	console.log(words("0x"+id) + ": key", jwk);
 
 	io.emit('peers', Object.values(peers));
 	console.log(peers);
