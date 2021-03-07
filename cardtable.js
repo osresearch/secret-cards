@@ -17,7 +17,7 @@ function shuffle(num_cards=52)
 	// complete the shuffle
 
 	let deck = new_deck(); // not encrypted
-	let order = utils.shuffle(Object.keys(players));
+	let order = utils.shuffle(Object.keys(channel.peers));
 
 	channel.emit('shuffle', {
 		deck: deck,

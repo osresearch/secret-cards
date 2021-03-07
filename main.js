@@ -26,7 +26,7 @@ channel.on('chat', (status,msg) => {
 });
 
 // attempt to validate the signature on the message
-// todo: check sequence number, match to existing player
+// todo: check sequence number, match to existing peer
 channel.on('chat', (status,msg) => {
 	var item = document.createElement('li');
 	if (!status.valid)
@@ -40,7 +40,7 @@ channel.on('chat', (status,msg) => {
 	window.scrollTo(0, document.body.scrollHeight);
 });
 
-function player_update(id)
+function peer_update(id)
 {
-	document.getElementById("player-sequence-"+id).textContent = players[id].seq;
+	document.getElementById("peer-sequence-"+id).textContent = peers[id].seq;
 }

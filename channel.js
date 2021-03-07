@@ -1,7 +1,5 @@
 /*
- * Secure channel communications between the players.
- * No card logic goes in here, although the player array is shared
- * with the card table, and the dealing uses the socket io messages.
+ * Secure channel communications between the peers.
  */
 "use strict"
 
@@ -45,7 +43,7 @@ class SecureChannel
 		this.public_key = null;
 		this.public_name = null;
 		this.public_seq = 0; // todo: should this be a random nonce?
-		this.players = {};
+		this.peers = {};
 
 		this.key_param = {
 			name: "ECDSA",
@@ -58,7 +56,7 @@ class SecureChannel
 		 * with the server.
 		 */
 		this.socket.on('connect', () => this.send_key());
-		this.socket.on('players', (player_list) => this.update_players(player_list));
+		this.socket.on('peers', (peer_list) => this.update_peers(peer_list));
 	}
 
 	// generate a signature on the msg, including the sequence number
@@ -95,28 +93,30 @@ class SecureChannel
 	}
 
 	// check the sequence number and signature for an incoming message
-	// to verify that it came from the player that claims to have sent it.
+	// to verify that it came from the peer that claims to have sent it.
 	async validate_message(msg)
 	{
-		let player = this.players[msg.key];
+		let peer = this.peers[msg.key];
 		let status = {
 			valid: false,
-			key: false,
+			peer: null,
 			seq: false,
 			sig: false,
 		};
 
-		// if we do not have a corresponding key for this player,
+		// if we do not have a corresponding key for this peer,
 		// then we can't check the sequence number of signature, so
 		// we are done here.
-		if (!player)
+		if (!peer)
 		{
-			console.log("UNKNOWN PLAYER:", msg);
+			console.log("UNKNOWN PEER:", msg);
 			return status;
 		}
 
-		// the key claims to be from a known player
-		status.key = msg.key;
+		// the key claims to be from a known peer
+		// we can't trust the server to fill in a peer,
+		// so we use the hash of the public key.
+		status.peer = msg.peer;
 
 		let signed_msg = JSON.stringify({
 			msg: msg.msg,
@@ -127,7 +127,7 @@ class SecureChannel
 
 		return window.crypto.subtle.verify(
 			this.key_param,
-			player.key,
+			peer.key,
 			hex2array(msg.sig),
 			getEncoding(signed_msg)
 		).then((valid) => {
@@ -136,11 +136,11 @@ class SecureChannel
 
 			// trust on first use for sequence number,
 			// otherwise require an exact match for the expected value
-			if (player.seq < 0 || msg.seq == player.seq + 1)
+			if (peer.seq < 0 || msg.seq == peer.seq + 1)
 			{
 				status.seq = true;
 			} else {
-				console.log("SEQ MISMATCH", player.seq + 1, msg);
+				console.log("SEQ MISMATCH", peer.seq + 1, msg);
 				valid = false;
 			}
 
@@ -148,10 +148,10 @@ class SecureChannel
 			{
 				// seq, sig, and key all match
 				status.valid = true;
-				player.seq = msg.seq;
+				peer.seq = msg.seq;
 			} else {
 				// something didn't match
-				player.cheats++;
+				peer.cheats++;
 			}
 
 			return status;
@@ -184,82 +184,82 @@ class SecureChannel
 		});
 	}
 
-	// update the list of players
+	// update the list of peers
 	// todo: if there is a game in
-	// action we need to signal an abnormal exit since no new players
-	// should join or current players should leave
-	// todo: detect a player leaving during game play
-	update_players(new_player_list)
+	// action we need to signal an abnormal exit since no new peers
+	// should join or current peers should leave
+	// todo: detect a peer leaving during game play
+	update_peers(new_peer_list)
 	{
-		let player_list = document.getElementById('players');
-		console.log(new_player_list);
+		let peer_list = document.getElementById('peers');
+		console.log(new_peer_list);
 
-		let new_players = {};
-		for(let new_player of new_player_list)
+		let new_peers = {};
+		for(let new_peer of new_peer_list)
 		{
 			// don't trust the server's hash; do it ourselves
-			let id = jwk2id(new_player);
-			new_player.id = id;
-			new_player.seq = -1;
-			new_player.cheats = 0;
-			new_players[id] = new_player;
+			let id = jwk2id(new_peer);
+			new_peer.id = id;
+			new_peer.seq = -1;
+			new_peer.cheats = 0;
+			new_peers[id] = new_peer;
 		}
 
-		// check to see if any player id's have gone away
-		for(let id in this.players)
+		// check to see if any peer id's have gone away
+		for(let id in this.peers)
 		{
-			if (id in new_players)
+			if (id in new_peers)
 				continue;
 
 			// todo: cancel a game in progress
-			delete players[id];
-			//removeElement("player-"+id);
+			delete peers[id];
+			//removeElement("peer-"+id);
 		}
 
-		// add in any new player id's
-		for(let id in new_players)
+		// add in any new peer id's
+		for(let id in new_peers)
 		{
-			if (id in this.players)
+			if (id in this.peers)
 				continue;
 
-			let player = new_players[id];
+			let peer = new_peers[id];
 
-			// new player has joined; import their public key
+			// new peer has joined; import their public key
 			// todo: add them in observer mode
-			this.players[id] = player;
+			this.peers[id] = peer;
 			window.crypto.subtle.importKey(
 				'jwk',
-				player,
+				peer,
 				this.key_param,
 				true,
-				player.key_ops // [ 'verify' ]
-			).then((player_pub) => {
-				player.key = player_pub;
+				peer.key_ops // [ 'verify' ]
+			).then((peer_pub) => {
+				peer.key = peer_pub;
 			});
 
 /*
-			// add them to the player list
+			// add them to the peer list
 			let it = document.createElement('li');
-			it.setAttribute("id", "player-" + id);
+			it.setAttribute("id", "peer-" + id);
 
 			let seq = document.createElement('span');
-			seq.setAttribute("class", "player-sequence");
-			seq.setAttribute("id", "player-sequence-" + id);
+			seq.setAttribute("class", "peer-sequence");
+			seq.setAttribute("id", "peer-sequence-" + id);
 			seq.textContent = '--';
 			let id_name = document.createElement('span');
-			id_name.setAttribute("class", "player-name");
+			id_name.setAttribute("class", "peer-name");
 			id_name.textContent = id;
 
 			it.appendChild(seq);
 			it.appendChild(id_name);
-			player_list.appendChild(it);
+			peer_list.appendChild(it);
 */
 		}
 
 /*
-		// update the total player count
-		let counter = document.getElementById('playerCount');
-		counter.textContent = Object.keys(players).length;
+		// update the total peer count
+		let counter = document.getElementById('peerCount');
+		counter.textContent = Object.keys(peers).length;
 */
 	}
 }
