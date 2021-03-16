@@ -16,6 +16,29 @@
 //const sra_default_prime = 2n ** 1279n - 1n;
 const sra_default_prime = 2n ** 607n - 1n;
 
+/*
+ * Compute a^e % n with big integers
+ * using the modular exponentiation so that it can be done
+ * in (non-constant) log2 time.
+ */
+function modExp(a, e, n)
+{
+	let r = 1n;
+	let x = a % n;
+
+	while (e != 0n)
+	{
+		if (e % 2n)
+			r = (r * x) % n;
+
+		e /= 2n;
+		x = (x * x) % n;
+	}
+
+	return r;
+}
+
+
 class SRA
 {
 	constructor(p=0n)
@@ -47,28 +70,6 @@ class SRA
 			this.d = inv;
 			break;
 		} 
-	}
-
-	/*
-	 * Compute a^e % n with big integers
-	 * using the modular exponentiation so that it can be done
-	 * in (non-constant) log2 time.
-	 */
-	modExp(a, e, n)
-	{
-		let r = 1n;
-		let x = a % n;
-
-		while (e != 0n)
-		{
-			if (e % 2n)
-				r = (r * x) % n;
-
-			e /= 2n;
-			x = (x * x) % n;
-		}
-
-		return r;
 	}
 
 	/*
@@ -107,7 +108,7 @@ class SRA
 	encrypt(m)
 	{
 		let mi = typeof(m) == "bigint" ? m : utils.array2bigint(m);
-		let ci = this.modExp(mi, this.d, this.p);
+		let ci = modExp(mi, this.e, this.p);
 		return ci;
 		//return bigint2array(ci);
 	}
@@ -118,11 +119,12 @@ class SRA
 	decrypt(c)
 	{
 		//let ci = array2bigint(c);
-		let mi = this.modExp(c, this.e, this.p);
+		let mi = modExp(c, this.d, this.p);
 		return mi;
 	}
 }
 
 exports.SRA = (p=0n) => new SRA(p);
+exports.modExp = modExp;
 
 })(typeof exports === 'undefined' ? this['sra']={} : exports);
