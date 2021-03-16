@@ -1,189 +1,634 @@
 /*
- * Wrap the raw DeckDealer and DeckPlayer objects with more complex
- * operations that use web-safe base64 encoding.
+ * Stuff for dealing and shuffling.
+ *
+ * We have to keep a deck per player, and an ordering of the players.
+ *
+ * To shuffle, we need to generate N*M+1 decks, where N is the number of players
+ * and M is the probability of detecting a cheater. After the shuffling rounds,
+ * each player chooses M decks to discard. All of the players reveal their SRA
+ * keys for those decks, which can then be checked for validity.  This leaves one
+ * encrypted deck that has probability 1/2^-M of being invalid, assuming that
+ * all but one of the players is honest.
+ *
+ * When we draw a card, it comes from the last player in the ordering.
+ * They have to reveal their name nonce, which reveals the previous player's name,
+ * and the next player reveals theirs, etc until it reaches us and we have the card
+ * encrypted with all of the previous players keys.
+ *
+ * Then we generate an ephemeral key and encrypt the card with this temporary key,
+ * and publish the card.  The previous player generates a key, encrypts the card,
+ * etc until it reachers the first player.  Who also geneates a key, but both
+ * encrypts the card with it as well as decrypts it with their real key.
+ * Then the first player decrypts with their real key, etc until it reaches
+ * us.  We now have the card encrypted with all of the temporary keys plus
+ * our real key.  Everyone reveals their temporary keys, and can validate that
+ * no one tried a blind-signing attack.  We can decrypt with our real key and
+ * learn which card we've received.
+ *
+ * To reveal the card, we publish our name nonce for it as well as the prior nonces
+ * that end up at the final name.  The previous player
+ * does the same, etc all the way to the first player.  If the chain of hashes
+ * matches the final name, then we prove that we received that card.
+ */
+"use strict";
+
+function make_words(x) {
+	return x.map(i => words.bigint2words(BigInt(i), 4));
+}
+
+/*
+ * TODO: Cut-n-choose shuffle protocol
+ * TODO: Detect game ending events (players going away)
+ * TODO: Lots of validation.
  */
 class CardTable
 {
-	constructor(deck_size,is_dealer)
+constructor(channel)
+{
+	this.channel = channel;
+	this.player = this.channel.public_name; // who am i?
+	this.players = []; // will be fixed when the shuffle happens
+	this.deck = null;
+	this.final_deck = null;
+	this.final_player = null;
+	this.prev_player = null;
+	this.next_player = null;
+	this.drawn_card = null;
+
+	this.channel.on('shuffle', (status,msg) => this.shuffle_msg(status,msg));
+	this.channel.on('draw', (status,msg) => this.draw_msg(status,msg));
+	this.channel.on('wrap', (status,msg) => this.wrap_msg(status,msg));
+	this.channel.on('unwrap', (status,msg) => this.unwrap_msg(status,msg));
+	this.channel.on('unseal', (status,msg) => this.unseal_msg(status,msg));
+}
+
+shuffle(num_cards=8)
+{
+	// publish a set of proposed cards,
+	// and an ordering of the players to
+	// complete the shuffle
+	// todo: validate that the initial deck we get back is the one we sent
+	this.initial_deck = new_deck(); // not encrypted, everyone validates it
+	this.order = Object.keys(this.channel.peers);
+	utils.shuffle(this.order)
+
+	console.log("Starting shuffle operation...", make_words(this.order));
+
+	this.channel.emit('shuffle', {
+		deck: Object.values(this.initial_deck),
+		order: this.order,
+		pass: 0,
+	});
+}
+
+draw_random_card(deck)
+{
+	for(let i in deck)
 	{
-		this.is_dealer = is_dealer;
-		this.deck_size = deck_size;
-		this.deck = null;
+		let c = deck[i];
+		if (!c.played)
+			return c.final_name;
 	}
 
-	/*
-	 * Output the deck in a format for the other side to import.
-	 */
-	export_deck()
+	return null;
+}
+
+draw_card(name=null)
+{
+	if (name == null)
 	{
-		let deck = this.deck.export()
-			.map(c => bigint2hex(c.encrypted,80) + "|" + bigint2hex(c.hash,32))
-			.join(',');
-		return "deck=" + deck;
-	}
-
-	/*
-	 * When we're connected or restarting, generate a deck and send it over
-	 */
-	shuffle()
-	{
-		// player waits for the dealer, so do nothing
-		if (!this.is_dealer)
-			return;
-
-		// create a new deck
-		this.deck = new DeckDealer(this.deck_size);
-
-		// shuffle and encrypt the deck for export
-		return this.export_deck();
-	}
-
-	/*
-	 * Reveal a card from our hand
-	 */
-	reveal(card)
-	{
-		if (!card || card.card == undefined)
-			return;
-
-		card.revealed = true;
-		console.log("reveal", card);
-		let nonce = this.is_dealer ? card.dealer_nonce : card.player_nonce;
-
-		return "reveal=" + bigint2hex(card.card, 32) + "," + bigint2hex(nonce, 32);
-	}
-
-	/*
-	 * Discard a card from our hand
-	 * (or the deck, or the other player's hand, although there might be game rules about that)
-	 */
-	discard(card)
-	{
-		if (!card)
-			return;
-
-		card.played = 'discard';
-		return "discard=" + bigint2hex(card.player_hash, 32);
-	}
-
-	/*
-	 * Receive a command from the other player,
-	 * optionally returning a command to send in return.
-	 */
-	command(m)
-	{
-		let [cmd,data] = m.split('=');
-
-		if (cmd == 'deck')
+		// find a random card that is not already played
+		name = this.draw_random_card(this.final_deck);
+		if (name == null)
 		{
-			let deck = data.split(',').map(c => {
-				let [enc,hash] = c.split('|');
-				enc = BigInt("0x" + enc);
-				hash = BigInt("0x" + hash);
-				return {
-					encrypted: enc,
-					hash: hash,
-				}
+			console.log("EMPTY DECK?");
+			return;
+		}
+	}
+
+	// todo: validate that the card we eventually receive is the right one
+	this.drawn_card = name;
+	const card_name = utils.bigint2hex(name, 32);
+
+	console.log("DRAWING", name);
+	this.channel.emit('draw', {
+		dest: this.player,
+		next: this.final_player,
+		final_name: card_name,
+		name: card_name,
+		nonce: null,
+	});
+}
+
+/*
+ * Draw messages flow from last to first player.
+ */
+draw_msg(status,msg)
+{
+	if (!status.valid)
+		return;
+
+	console.log("draw", msg);
+
+	const card = this.final_deck[msg.final_name];
+	if (!card)
+	{
+		console.log("UNKNOWN CARD", msg);
+		return;
+	}
+
+	if (msg.next == this.final_player)
+	{
+		// mark the destination as the eventual owner of this card
+		// if this is the first message for this card.  someone might
+		// be cheating if this is an attempt to draw the card again.
+		if (card.player)
+			console.log("CARD ALREADY PLAYED", msg);
+		console.log("Dealing to ", make_words([msg.dest]));
+		card.player = msg.dest;
+		card.known_name = BigInt(msg.final_name);
+	} else
+	if (!card.known_name)
+	{
+		console.log("deal out of order? no nonces known", card);
+		return;
+	} else {
+		// this is in the chain, so validate the hash and update the deck
+		const nonce = BigInt(msg.nonce);
+		const name = BigInt(msg.name);
+		const full_card = nonce << 256n | name;
+		const next_name = utils.sha256bigint(full_card, 64);
+		if (next_name != card.known_name)
+		{
+			console.log("BAD NONCE", next_name, card.known_name, card, msg);
+			return;
+		}
+		card.known_name = name;
+		card.nonces.push(nonce);
+		console.log("card", msg.final_name, card.nonces);
+	}
+
+	if (msg.next != this.player)
+	{
+		// nothing else for us to do with this one until
+		// they ask us for it.
+		return;
+	}
+
+	// if this is a card for us, then we switch to the phase2 of the draw protocol
+	if (msg.dest == this.player)
+		return this.draw_phase2(msg, card);
+
+	// todo: ensure that dest is before me in the order
+	// this one is for me to decrypt and fill in
+	const my_card = this.deck.deck[msg.name];
+	console.log("my card", my_card);
+	if (!my_card)
+	{
+		console.log("UNKNOWN CARD", msg);
+		return;
+	}
+
+	if (my_card.played)
+	{
+		console.log("PLAYED CARD", msg);
+		return;
+	}
+
+	console.log("passing on nonce", my_card);
+	this.channel.emit('draw', {
+		dest: msg.dest,
+		next: this.prev_player,
+		final_name: msg.final_name,
+		name: utils.bigint2hex(my_card.prev_name, 32),
+		nonce: utils.bigint2hex(my_card.nonce, 16),
+	});
+}
+
+/*
+ * Phase two is to wrap the encrypted card and flows towards the first player
+ */
+draw_phase2(msg,card)
+{
+	// this is destined for us, switch to phase 2 of the draw
+
+	// we should be able to identify it in our deck
+	let card_name = utils.bigint2hex(card.known_name, 32);
+	if (!(card_name in this.deck.deck))
+	{
+		console.log("card not in our deck?", card_name, card);
+		return;
+	}
+
+	card.our_card = this.deck.deck[card_name];
+
+	if (!this.prev_player)
+	{
+		// special case: if we're the first player, then we do not need
+		// to do anything.  it is OURS!
+		let orig_name = utils.bigint2hex(card.our_card.prev_name, 32);
+		card.orig_card = this.initial_deck[orig_name];
+		card.nonces.push(card.our_card.nonce);
+		console.log("FOR US!", card.orig_card.encrypted, orig_name, card);
+		return;
+	}
+
+	console.log("Wrapping", card);
+
+	// generate a temporary key and encrypt the card with it
+	if (card.temp_key)
+		console.log("OVERLAPPING DEALS!");
+
+	card.temp_key = sra.SRA();
+
+	// wrap the encrypted card with both our original key and the temporary key
+	let reencrypted = card.temp_key.encrypt(this.deck.sra.encrypt(card.our_card.encrypted));
+	this.channel.emit('wrap', {
+		dest: msg.dest,
+		next: this.prev_player,
+		final_name: msg.final_name,
+		encrypted: utils.bigint2hex(reencrypted, 80),
+	});
+}
+
+/*
+ * TODO: validate that we're wrapping for the right player
+ * TODO: validate the wrapped messages once the keys are revealed
+ *
+ * wrap continues phase 2 flowing towards first player
+ */
+wrap_msg(status,msg)
+{
+	if (!status.valid)
+		return;
+
+	console.log("WRAP", msg);
+
+	const card = this.final_deck[msg.final_name];
+	if (!card)
+	{
+		console.log("WRAP UNKNOWN CARD", msg);
+		return;
+	}
+
+	if (msg.next != this.player)
+	{
+		// just store the wrapped message
+		//card.wrapped.push(msg);
+		return;
+	}
+
+	// generate a temporary key and encrypt the card with it as a wrapper
+	if (card.temp_key)
+		console.log("OVERLAPPING DEALS!", card);
+
+	card.temp_key = sra.SRA();
+
+	let encrypted = BigInt(msg.encrypted);
+	let reencrypted = card.temp_key.encrypt(encrypted);
+
+	if (this.prev_player)
+	{
+		console.log("Wrapping", card);
+
+		this.channel.emit('wrap', {
+			dest: msg.dest,
+			next: this.prev_player,
+			final_name: msg.final_name,
+			encrypted: utils.bigint2hex(reencrypted, 80),
+		});
+	} else {
+		// special case if we're the first player
+		// start the unwrapping process
+		console.log("Unwrapping", card);
+		let unwrapped = this.deck.sra.decrypt(reencrypted);
+
+		this.channel.emit('unwrap', {
+			dest: msg.dest,
+			next: this.next_player,
+			final_name: msg.final_name,
+			encrypted: utils.bigint2hex(unwrapped, 80),
+		});
+	}
+}
+
+/*
+ * TODO: validate that we're wrapping for the right player
+ * TODO: validate the wrapped messages once the keys are revealed
+ * TODO: only process unseal messages if we are sure we have all of them
+ *
+ * Unwraps flow outwards from first player to last player
+ */
+unwrap_msg(status,msg)
+{
+	if (!status.valid)
+		return;
+
+	console.log("UNWRAP", msg);
+
+	const card = this.final_deck[msg.final_name];
+	if (!card)
+	{
+		console.log("WRAP UNKNOWN CARD", msg);
+		return;
+	}
+
+	if (msg.next != this.player)
+	{
+		// just store the wrapped message
+		//card.wrapped.push(msg);
+		return;
+	}
+
+	// if we haven't created a temp key, then something is wrong in the
+	// protocol or someone is cheating.
+	if (!card.temp_key)
+	{
+		console.log("No temp key?", card);
+		return;
+	}
+
+	// if we're the final destination for this wrapped card,
+	// then we now have our card, encrypted with all of the temp keys.
+	// ask everyone for their temp keys to finish the unsealing process.
+	// start by revealing our temp key
+	if (msg.dest == this.player)
+	{
+		let encrypted = BigInt(msg.encrypted);
+		//card.unwrapped = this.deck.sra.decrypt(card.temp_key.decrypt(encrypted));
+		card.unwrapped = this.deck.sra.decrypt(encrypted);
+
+		console.log("starting unseal", card.unwrapped);
+		this.channel.emit('unseal', {
+			dest: msg.dest,
+			next: this.prev_player,
+			final_name: msg.final_name,
+			key: utils.bigint2hex(card.temp_key.d, 80),
+		});
+
+		return;
+	}
+
+	// continue the flow outwards
+	let encrypted = BigInt(msg.encrypted);
+	let decrypted = this.deck.sra.decrypt(encrypted);
+
+	if (!this.next_player)
+	{
+		console.log("protocol error? final player not the destination?", msg);
+		return;
+	}
+
+	console.log("continuing unwrap", card);
+
+	this.channel.emit('unwrap', {
+		dest: msg.dest,
+		next: this.next_player,
+		final_name: msg.final_name,
+		encrypted: utils.bigint2hex(decrypted, 80),
+	});
+}
+
+/*
+ * TODO: validate that we're wrapping for the right player
+ * TODO: validate the wrapped messages once the keys are revealed
+ * TODO: only process unseal messages if we are sure we have all of them
+ */
+unseal_msg(status,msg)
+{
+	if (!status.valid)
+		return;
+
+	console.log("UNSEAL", msg);
+
+	const card = this.final_deck[msg.final_name];
+	if (!card)
+	{
+		console.log("UNSEAL UNKNOWN CARD", msg);
+		return;
+	}
+
+	if (card.unwrapped)
+	{
+		let d = BigInt(msg.key);
+		card.unwrapped = sra.modExp(card.unwrapped, d, this.deck.sra.p);
+		let hex = utils.bigint2hex(card.unwrapped, 80);
+
+		// this was the final value, so the card should be good
+		if (msg.next == null && msg.dest == this.player)
+			console.log("FINAL VALUE:", hex);
+		else
+			console.log("Partial unseal: ", hex);
+	}
+
+	if (msg.next != this.player)
+		return;
+
+	if (!card.temp_key)
+	{
+		console.log("NO TEMP KEY TO UNSEAL", msg, card);
+		return;
+	}
+	
+	this.channel.emit('unseal', {
+		final_name: msg.final_name,
+		dest: msg.dest,
+		key: utils.bigint2hex(card.temp_key.d, 80),
+		next: this.prev_player,
+	});
+
+	//card.temp_key = null;
+}
+
+
+/*
+ * TODO: validate that we are not in a game!
+ */
+shuffle_msg(status,msg)
+{
+	// hack to update our name now that we have one
+	this.player = this.channel.public_name; // who am i?
+
+	if (!status.valid)
+		return;
+
+	console.log("shuffle", msg.pass, make_words(msg.order));
+
+	// always validate the initial deck
+	if (msg.pass == 0)
+		this.initial_deck = new_deck_validate(msg.deck);
+	if (!this.initial_deck)
+	{
+		console.log("No valid initial deck!");
+		return;
+	}
+
+	// once all the passes are over, the final deck is ready
+	// todo: validate that the deck only has hashes
+	if (msg.pass == msg.order.length)
+	{
+		this.final_deck = {};
+		for(let c of msg.deck)
+		{
+			if (c.name in this.final_deck)
+				console.log("DUPLICATE CARD!", c);
+
+			this.final_deck[c.name] = {
+				final_name: BigInt(c.name),
+				nonces: [],
+				name: null,
+				value: null,
+				played: false,
+			};
+		}
+
+		this.final_player = msg.order[msg.pass - 1];
+		console.log("FINAL DECK", status.peer.name, this.final_deck);
+	}
+
+	// if we are not the shuffler for this round, we're done
+	if (msg.order[msg.pass] != this.player)
+		return;
+
+	// todo: validate that there was an initial pass
+	// todo: validate that every pass had a consistent ordering
+	// todo: validate that there are no duplicate shufflers
+	// todo: validate that there were enough passes for each player
+	// todo: validate that the previous player was the source of this message
+	// todo: implement cut-n-choose protocol to ensure fairness
+
+	this.deck = new Deck(msg.deck);
+	this.players = msg.order;
+
+	if (msg.pass != 0)
+		this.prev_player = status.peer.id;
+	else
+		this.prev_player = null;
+
+	if (msg.pass < msg.order.length)
+		this.next_player = msg.order[msg.pass+1];
+	else
+		this.next_player = null;
+
+	console.log("my turn to shuffle", this.deck);
+
+	this.channel.emit('shuffle', {
+		deck: this.deck.export(),
+		order: msg.order,
+		pass: msg.pass + 1,
+	});
+}
+}
+
+class Deck
+{
+	constructor(prev_deck=null)
+	{
+		if (prev_deck == null)
+			prev_deck = this.new_deck();
+
+		this.sra = sra.SRA();
+		this.deck = {};
+		for(let c of prev_deck)
+		{
+			// un-stringify the name and encrypted value
+			let prev_name = BigInt(c.name);
+			let encrypted = BigInt(c.encrypted);
+
+			let nonce = utils.randomBigint(128); // bits
+			let full_card = nonce << 256n | prev_name; // new nonce || sha256 of old
+			let name = utils.sha256bigint(full_card, 64); // 2 * 32 bytes for each hash
+
+			let card = {
+				prev_name: prev_name, // what the previous player called it
+				encrypted: encrypted, // encrypted with everyone's key up to me
+				nonce: nonce,
+				name: name,
+			};
+
+			this.deck[utils.bigint2hex(name, 32)] = card;
+		}
+	}
+
+	export()
+	{
+		// extract the public pieces of the deck and export
+		// a shuffled version encrypted with our key
+		let pub_deck = [];
+		for(let name of Object.keys(this.deck))
+		{
+			let c = this.deck[name];
+			let reencrypted = this.sra.encrypt(c.encrypted);
+			pub_deck.push({
+				name: utils.bigint2hex(c.name, 32),
+				encrypted: utils.bigint2hex(reencrypted, 80),
 			});
-
-			if (this.is_dealer)
-			{
-				// player has returned an encrypted deck to us,
-				// import it and we are ready to play.
-				this.deck.import(deck);
-				return;
-			} else {
-				// dealer has sent us the deck, setup our player deck to
-				// re-encrypt it and return the new deck to them
-				this.deck = new DeckPlayer(deck);
-				return this.export_deck();
-			}
 		}
 
-		if (cmd == 'card')
+		return utils.shuffle(pub_deck);
+	}
+}
+
+
+/*
+ * Generate a clean deck, in order, with new nonces.
+ */
+function new_deck(size=8)
+{
+	let deck = {}
+	for(let i = 0 ; i < size ; i++)
+	{
+		let nonce = utils.randomBigint(256); // bits
+		let full_card = nonce << 256n | BigInt(i);
+		let name = utils.sha256bigint(full_card, 64); // 2 * 32 bytes for each hash
+		let hex_name = utils.bigint2hex(name, 32);
+
+		deck[hex_name] = {
+			name: hex_name,
+			encrypted: utils.bigint2hex(full_card,64),
+		};
+	}
+
+	return deck;
+}
+
+
+function new_deck_validate(deck, deck_size=8)
+{
+	// validate that the cards are proper
+	const new_deck_size = deck.length;
+	if (new_deck_size != deck_size)
+	{
+		console.log("incorrect deck size", deck_size);
+		return false;
+	}
+
+	let new_deck = {};
+
+	for(let i = 0 ; i < deck_size ; i++)
+	{
+		const card = deck[i];
+		const value = BigInt(card.encrypted);
+		const name = BigInt(card.name);
+		const mask = (1n << 256n) - 1n;
+		const card_value = value & mask;
+		const hash_name = utils.sha256bigint(value, 64); // 2 * 32 bytes for each hash
+
+		if (card_value != BigInt(i))
 		{
-			// Receive a card from the other side.
-			// if this is a "face up" card, reveal the value
-			let card = false;
-			let [options,encrypted_card,player_nonce] = data.split(',');
-			if (encrypted_card)
-				encrypted_card = BigInt("0x" + encrypted_card);
-
-			if (this.is_dealer)
-			{
-				// must have a nonce!
-				if (!player_nonce)
-					throw "dealer must receive nonce"
-				player_nonce = BigInt("0x" + player_nonce);
-				card = this.deck.receive({card: encrypted_card, nonce: player_nonce});
-			} else {
-				// nonce is not required for receiving, but is required for revealing
-				card = this.deck.receive(encrypted_card);
-				//let player_cards = this.deck.deck.filter(c => c.card == card)
-				//player_nonce = player_cards[0].player_nonce;
-			}
-
-			if (options == 'faceup')
-				return this.reveal(card);
-
+			console.log("card " + i + " invalid value:", card);
 			return;
 		}
 
-		if (cmd == 'draw')
+		if (hash_name != name)
 		{
-			// if there is data, then they want a specific card.
-			// otherwise send them any card.
-			let card;
-			let target = 'facedown';
-
-			if (data == 'faceup')
-			{
-				target='faceup';
-				data = false;
-			}
-
-			if (data)
-			{
-				let player_hash = BigInt("0x" + data);
-				card = this.deck.drawn(player_hash);
-			} else {
-				card = this.deck.deal();
-			}
-
-			if (this.is_dealer)
-			{
-				// send just the encrypted card back to them
-				return "card=" + target + "," + bigint2hex(card, 80);
-			} else {
-				// send the card with the encryption, plus our nonce to validate it
-				return "card=" + target + "," + bigint2hex(card.card, 80) + "," + bigint2hex(card.nonce, 32);
-			}
-		}
-
-		if (cmd == 'reveal')
-		{
-			// they have revealed a card, validate the player nonce
-			let [card,player_nonce] = data.split(',');
-			player_nonce = BigInt("0x" + player_nonce);
-			card = BigInt("0x" + card);
-			if (this.deck.validate_card(player_nonce, card))
-				console.log("valid card", card);
+			console.log("card " + i + " invalid hash:", card);
 			return;
 		}
 
-		if (cmd == 'discard')
-		{
-			// they are discarding a card from their hand; only the player nonce is required
-			const player_hash = BigInt("0x" + data);
-			const cards = this.deck.deck.filter(c => c.player_hash == player_hash);
-			if (cards.length != 1)
-				throw "bad card", player_hash;
-			const card = cards[0];
+		new_deck[card.name] = deck[i];
+	}
 
-			// todo: validate that they had the card to discard?
-			card.played = 'discard';
-
-			return;
-		}
-	};
+	console.log("Initial deck validated", new_deck);
+	return new_deck;
 }

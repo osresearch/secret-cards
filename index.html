@@ -1,371 +1,43 @@
+<!DOCTYPE html>
 <html>
-<head>
-<script src="util.js"></script>
-<script src="sha256.js"></script>
-<script src="sra.js"></script>
-<script src="cards.js"></script>
-<script src="cardtable.js"></script>
-<script src="webrtc.js"></script>
+  <head>
+    <title>secret.cards</title>
+    <style>
+      body { margin: 0; padding-bottom: 3rem; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
 
+      #form { background: rgba(0, 0, 0, 0.15); padding: 0.25rem; position: fixed; bottom: 0; left: 0; right: 0; display: flex; height: 3rem; box-sizing: border-box; backdrop-filter: blur(10px); }
+      #input { border: none; padding: 0 1rem; flex-grow: 1; border-radius: 2rem; margin: 0.25rem; }
+      #input:focus { outline: none; }
+      #form > button { background: #333; border: none; padding: 0 1rem; margin: 0.25rem; border-radius: 3px; outline: none; color: #fff; }
 
-<!-- HTML Meta Tags -->
-<title>secret.cards - online card games without a trusted dealer</title>
-<meta name="description" content="Play card games with cryptographic proof of the player's hands. No dealer, no server, no cheating.">
+      #messages { list-style-type: none; margin: 0; padding: 0; }
+      #messages > li { padding: 0.5rem 1rem; }
+      #messages > li:nth-child(odd) { background: #efefef; }
 
-<!-- Facebook Meta Tags -->
-<meta property="og:url" content="https://www.opengraph.xyz/">
-<meta property="og:type" content="website">
-<meta property="og:title" content="secret.cards - online card games without a trusted dealer">
-<meta property="og:description" content="Play card games with cryptographic proof of the player's hands. No dealer, no server, no cheating.">
-<meta property="og:image" content="https://secret.cards/images/header.jpg">
+	.peer-sequence { color: #000; }
+	.peer-name { color: #888; }
+    </style>
+  </head>
+  <body>
+    <div>
+      <span id='peerCount'>0</span> peers
+      <ul id='peers'></ul>
+    </div>
 
-<!-- Twitter Meta Tags -->
-<meta name="twitter:card" content="summary_large_image">
-<meta property="twitter:domain" content="opengraph.xyz">
-<meta property="twitter:url" content="https://www.opengraph.xyz/">
-<meta name="twitter:title" content="secret.cards - online card games without a trusted dealer">
-<meta name="twitter:description" content="Play card games with cryptographic proof of the player's hands. No dealer, no server, no cheating.">
-<meta name="twitter:image" content="https://secret.cards/images/header.jpg">
+    <button onclick="cards.shuffle()">Shuffle</button>
 
-<!-- Meta Tags Generated via https://www.opengraph.xyz -->
+    <ul id="messages"></ul>
+    <form id="form" action="">
+      <input id="input" autocomplete="off" /><button>Send</button>
+    </form>
+  </body>
 
-<style>
-.reveal-button, .discard-button {
-	display: block;
-	position: absolute;
-	left: 0px;
-	width: 64px;
-	height: 32px;
-	color: #ffffff00;
-	font-size: 16px;
-}
-
-.reveal-button { top:0px; }
-.discard-button { top:40px; }
-
-.reveal-button:hover, .discard-button:hover {
-	background: #800040a0;
-	color:#000;
-}
-
-.suite-1, .suite-2 {
-	position: relative;
-	color: red;
-}
-.suite-0, .suite-3 {
-	position: relative;
-	color: blue;
-}
-
-.card-button {
-	width: 128px;
-	height: 40px;
-}
-</style>
-</head>
-<body>
-<script>
-const cards =
-"🂡🂢🂣🂤🂥🂦🂧🂨🂩🂪🂫🂭🂮"+
-"🂱🂲🂳🂴🂵🂶🂷🂸🂹🂺🂻🂽🂾"+
-"🃁🃂🃃🃄🃅🃆🃇🃈🃉🃊🃋🃍🃎"+
-"🃑🃒🃓🃔🃕🃖🃗🃘🃙🃚🃛🃝🃞";
-const num_cards = cards.length/2; // two-byte characters
-const default_card = "🂠";
-let cardtable = null;
-let is_dealer = false;
-
-function add_card(id, card)
-{
-	let new_card = document.createElement('span');
-
-	if (id == "player")
-		id = is_dealer ? "other" : "self";
-	else
-	if (id == "dealer")
-		id = is_dealer ? "self" : "other";
-
-	if (card.card == undefined)
-	{
-		new_card.innerHTML = default_card;
-	} else {
-		let card_num = Number(card.card);
-		let suite = Math.floor(card_num / 13);
-
-		new_card.innerHTML = cards.substr(card_num*2, 2);
-
-		new_card.setAttribute('class', 'suite-' + suite);
-		let style = '';
-
-		if (card.revealed)
-		{
-			style += 'background:lightgray;';
-		} else
-		if (id == 'self')
-		{
-			// add a "reveal" button at the bottom of the card
-			let reveal_button = document.createElement('div');
-			reveal_button.setAttribute("class", "reveal-button");
-			reveal_button.onclick = () => {
-				if (!card.revealed)
-					n.channel.send(cardtable.reveal(card));
-				display_update();
-			};
-
-			reveal_button.innerHTML = "REVEAL";
-			new_card.appendChild(reveal_button);
-		}
-
-		// add a "discard" button at the bottom of the card for our own
-		if (id == 'self')
-		{
-			let discard_button = document.createElement('div');
-			discard_button.setAttribute("class", "discard-button");
-			discard_button.onclick = () => {
-				n.channel.send(cardtable.discard(card));
-				display_update();
-			};
-
-			discard_button.innerHTML = "DISCARD";
-			new_card.appendChild(discard_button);
-		}
-
-		new_card.setAttribute('style', style);
-
-	}
-
-
-	document.getElementById(id).appendChild(new_card);
-}
-
-function display_update()
-{
-	document.getElementById("self").innerHTML = "";
-	document.getElementById("other").innerHTML = "";
-	document.getElementById("deck").innerHTML = "";
-	document.getElementById("table").innerHTML = "";
-	document.getElementById("discard").innerHTML = "";
-
-	if (!cardtable || !cardtable.deck || !cardtable.deck.deck)
-		return;
-
-	let deck = cardtable.deck.deck;
-
-	for(let c of deck)
-	{
-		let div = c.played ? c.played : "deck";
-		add_card(div, c);
-	}
-}
-
-
-// if the URL does not have a webrtc offer, then we are
-// the dealer and can setup the data chanell
-
-const url_params = new URLSearchParams(window.location.search);
-const is_webrtc_initiator = !url_params.has("token");
-
-console.log("dealer?", is_webrtc_initiator);
-
-if (is_webrtc_initiator)
-{
-	n = new DataChannel();
-	is_dealer = true;
-	cardtable = new CardTable(num_cards, is_dealer);
-	let connected = false;
-
-	n.offer_ready = (offer) => {
-		document.getElementById("webrtc-link").innerHTML = "Send this <a href=" + document.location + "?token=" + offer + ">link to other player</a>";
-
-		let answer = document.getElementById('webrtc-answer');
-
-		answer.addEventListener("keyup", event => {
-			if (connected || event.key !== "Enter")
-				return;
-			console.log("accepting", answer.value);
-			n.accept(answer.value);
-			event.preventDefault();
-		});
-	};
-
-	n.onopen = () => {
-		// when the other side connects, hide the webrtc gui
-		connected = true;
-		document.getElementById("webrtc-ui").setAttribute("style", "display:none");
-		document.getElementById("game-ui").setAttribute("style", "display:block");
-
-		// and send them the deck
-		n.channel.send(cardtable.shuffle());
-	};
-} else {
-	n = new DataChannel(url_params.get("token"))
-	cardtable = new CardTable(num_cards, is_dealer);
-
-	n.offer_ready = (answer) => {
-		let d = document.getElementById("webrtc-answer");
-		d.value = answer;
-
-		let b = document.getElementById("copy-answer");
-		b.setAttribute("style", "visibility:block");
-	};
-
-	n.onopen = () => {
-		// when the other side connects, hide the webrtc gui
-		document.getElementById("webrtc-ui").setAttribute("style", "display:none");
-		document.getElementById("game-ui").setAttribute("style", "display:block");
-
-		// not the dealer, so hide the shuffle button, too
-		document.getElementById("shuffle-button").setAttribute("style", "display:none");
-	};
-}
-
-function chat(msg,send=0)
-{
-	if (send)
-	{
-		n.channel.send('chat=' + msg);
-		msg = "YOU: " + msg;
-	} else {
-		msg = "THEM:" + msg;
-	}
-
-	let div = document.getElementById("chat");
-
-	div.appendChild(document.createTextNode(msg));
-	div.appendChild(document.createElement("br"));
-	div.scrollTop = div.scrollHeight;
-	return;
-}
-
-n.onmessage = (m) => {
-	console.log("RX", m.substr(0,64));
-	if (m.substr(0,5) == "chat=")
-	{
-		chat(m.substr(5));
-		return;
-	}
-
-	let resp = cardtable.command(m);
-	if (resp)
-	{
-		console.log("TX", resp.substr(0,64));
-		n.channel.send(resp);
-	}
-
-	display_update();
-};
-
-</script>
-
-
-<div id="webrtc-ui">
-<h1>secret.cards: pre-alpha "Mental Poker"</h1>
-<h2>No dealer, no server, no cheating</h2>
-
-<form onsubmit="return false">
-<p>
-<span id="webrtc-link"></span>
-<p>
-Enter their answer here: <input id="webrtc-answer" />
-<input type="button" value="Copy Answer" id="copy-answer" style="visibility:hidden" onclick="
-	let copy_field = document.getElementById('webrtc-answer');
-	copy_field.select();
-	copy_field.setSelectionRange(0,99999);
-	document.execCommand('copy');
-" />
-</form>
-
-<pre>
-2^607 - 1 = 531137992816767098689588206\
-552468627329593117727031923199444138200\
-403559860852242739162502265229285668889\
-329486246501015346579337652707239409519\
-978766587351943831270835393219031728127
-</pre>
-
-More info in the <a href="README.md">README.md</a>
-and Shamir, Rivest, Adleman's paper <a href="https://people.csail.mit.edu/rivest/pubs/SRA81.pdf">SRA81.pdf</a>.
-<p>
-Source is <a href="https://github.com/osresearch/secret-cards">github.com/osresearch/secret-cards</a>.
-Please <a href="https://github.com/osresearch/secret-cards/issues">file issues</a> and <a href="https://github.com/osresearch/secret-cards/pull-requests">pull requets</a>.
-
-<img
-	src="images/mersenne.jpg"
-	style="position:fixed; bottom:0px; right:0px; z-index:-1;"
-	id="logo"
-/>
-
-</div>
-
-<div id="game-ui" style="display:none">
-
-<table>
-<tr>
-<th>Self</th>
-<td>
-<input type="button" class="card-button" value="DRAW" onclick="
-	n.channel.send('draw')
-	display_update();
-" /><br/>
-<input type="button" class="card-button" value="FACEUP" onclick="
-	n.channel.send('draw=faceup')
-	display_update();
-" />
-</td>
-<td height="64px"><div id="self" style="font-size:64px"></div></td>
-</tr>
-<tr>
-<th>Other</th>
-<td>
-<input type="button" class="card-button" value="DRAW" onclick="
-	n.channel.send(cardtable.command('draw'));
-	display_update();
-" />
-<br/>
-<input type="button" class="card-button" value="FACEUP" onclick="
-	n.channel.send(cardtable.command('draw=faceup'));
-	display_update();
-" />
-<td height="64px"><div id="other" style="font-size:64px"></div></td>
-</td>
-</tr>
-<tr>
-<th>Discard</th>
-<td></td>
-<td><div id="discard" style="font-size:32px"></div></td>
-</tr>
-<tr>
-<th>Table</th>
-<td></td>
-<td><div id="table" style="font-size:64px"></div></td>
-</tr>
-<tr>
-<th width="10%">Deck</th>
-<td><input type="button" id="shuffle-button" class="card-button" value="SHUFFLE" onclick="
-	n.channel.send(cardtable.shuffle());
-	display_update();
-"/></td>
-<td width="80%"><div id="deck" style="font-size:32px"></div></td>
-</tr>
-</table>
-
-<form id="chat-form" autocomplete="off" onsubmit="return false">
-	<input type="text" id="chat-input" size="80%" />
-	<input type="submit" value="Send" />
-</form>
-
-<div id="chat" style="width:90%; height:250px; overflow:scroll;"></div>
-
-<script>
-document.getElementById("chat-form").addEventListener("submit", () => {
-	let chat_input = document.getElementById('chat-input');
-	let msg = chat_input.value;
-	chat_input.value='';
-	chat(msg, 1);
-});
-</script>
-
-</div>
-
-</body>
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="sha256.js"></script>
+    <script src="utils.js"></script>
+    <script src="words.js"></script>
+    <script src="channel.js"></script>
+    <script src="sra.js"></script>
+    <script src="cardtable.js"></script>
+    <script src="main.js"></script>
 </html>

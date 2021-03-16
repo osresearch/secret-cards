@@ -3,13 +3,41 @@
  * This is similar to RSA, but allows multiple parties to
  * encrypt the message in any order, and then decrypt it in
  * any order.
+ *
+ * This needs the utils.js module for bigint to stuff.
  */
+
+(function (exports) {
+'use strict'
 
 // default prime is the 15th Mersenne prime, which has 1279 bits and
 // which serves as a nothing up-my-sleeves number to provide similar
 // security to RSA2048.
 //const sra_default_prime = 2n ** 1279n - 1n;
 const sra_default_prime = 2n ** 607n - 1n;
+
+/*
+ * Compute a^e % n with big integers
+ * using the modular exponentiation so that it can be done
+ * in (non-constant) log2 time.
+ */
+function modExp(a, e, n)
+{
+	let r = 1n;
+	let x = a % n;
+
+	while (e != 0n)
+	{
+		if (e % 2n)
+			r = (r * x) % n;
+
+		e /= 2n;
+		x = (x * x) % n;
+	}
+
+	return r;
+}
+
 
 class SRA
 {
@@ -25,7 +53,7 @@ class SRA
 		{
 			// choose a random encryption key and check to see if it
 			// is relatively prime to the modulus.
-			let k = randomBigint(bits);
+			let k = utils.randomBigint(bits);
 			console.log("trying", k);
 
 			// gcd(k,phi_p) == 1 means that they are relatively prime
@@ -42,28 +70,6 @@ class SRA
 			this.d = inv;
 			break;
 		} 
-	}
-
-	/*
-	 * Compute a^e % n with big integers
-	 * using the modular exponentiation so that it can be done
-	 * in (non-constant) log2 time.
-	 */
-	modExp(a, e, n)
-	{
-		let r = 1n;
-		let x = a % n;
-
-		while (e != 0n)
-		{
-			if (e % 2n)
-				r = (r * x) % n;
-
-			e /= 2n;
-			x = (x * x) % n;
-		}
-
-		return r;
 	}
 
 	/*
@@ -101,8 +107,8 @@ class SRA
 	 */
 	encrypt(m)
 	{
-		let mi = typeof(m) == "bigint" ? m : array2bigint(m);
-		let ci = this.modExp(mi, this.d, this.p);
+		let mi = typeof(m) == "bigint" ? m : utils.array2bigint(m);
+		let ci = modExp(mi, this.e, this.p);
 		return ci;
 		//return bigint2array(ci);
 	}
@@ -113,7 +119,12 @@ class SRA
 	decrypt(c)
 	{
 		//let ci = array2bigint(c);
-		let mi = this.modExp(c, this.e, this.p);
+		let mi = modExp(c, this.d, this.p);
 		return mi;
 	}
 }
+
+exports.SRA = (p=0n) => new SRA(p);
+exports.modExp = modExp;
+
+})(typeof exports === 'undefined' ? this['sra']={} : exports);
