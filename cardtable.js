@@ -31,31 +31,46 @@
  * matches the final name, then we prove that we received that card.
  */
 "use strict";
-let deck = null;
-let final_deck = null;
-let final_player = null;
-let prev_player = null;
-let drawn_card = null;
 
-function shuffle(num_cards=52)
+/*
+ * TODO: Cut-n-choose shuffle protocol
+ * TODO: Detect game ending events (players going away)
+ * TODO: Lots of validation.
+ */
+class CardTable
+{
+constructor(channel)
+{
+	this.channel = channel;
+	this.players = channel.peers;
+	this.deck = null;
+	this.final_deck = null;
+	this.final_player = null;
+	this.prev_player = null;
+	this.drawn_card = null;
+
+	channel.on('draw', (status,msg) => this.draw_msg(status,msg));
+	channel.on('shuffle', (status,msg) => this.shuffle_msg(status,msg));
+}
+
+shuffle(num_cards=52)
 {
 	console.log("Starting shuffle operation...");
 
 	// publish a set of proposed cards,
 	// and an ordering of the players to
 	// complete the shuffle
+	this.initial_deck = new_deck(); // not encrypted, everyone validates it
+	this.order = utils.shuffle(Object.keys(this.channel.peers));
 
-	let deck = new_deck(); // not encrypted
-	let order = utils.shuffle(Object.keys(channel.peers));
-
-	channel.emit('shuffle', {
-		deck: deck,
-		order: order,
+	this.channel.emit('shuffle', {
+		deck: this.initial_deck,
+		order: this.order,
 		pass: 0,
 	});
 }
 
-function draw_random_card(deck)
+draw_random_card(deck)
 {
 	for(let c of deck)
 	{
@@ -66,46 +81,50 @@ function draw_random_card(deck)
 	return null;
 }
 
-function draw_card(name=null)
+draw_card(name=null)
 {
 	if (name == null)
 	{
 		// find a random card that is not already played
-		name = draw_random_card(final_deck);
+		name = draw_random_card(this.final_deck);
 		if (name == null)
 			return;
 	}
 
 	// todo: validate that the card we eventually receive is the right one
-	drawn_card = name;
+	this.drawn_card = name;
 	const card_name = utils.bigint2hex(name, 64);
 
-	channel.emit('draw', {
-		dest: channel.public_name,
-		source: final_player,
+	this.channel.emit('draw', {
+		dest: this.channel.public_name,
+		source: this.final_player,
 		final_name: card_name,
 		name: null,
 		nonce: null,
 	});
 }
 
-channel.on('draw', (status,msg) => {
+draw_msg(status,msg)
+{
 	if (!status.valid)
 		return;
 
 	console.log("draw", msg);
 
-	const card = final_deck[msg.name];
+	const card = this.final_deck[msg.name];
 	if (!card)
 	{
 		console.log("UNKNOWN CARD", msg);
 		return;
 	}
 
-	if (msg.source == final_player)
+	if (msg.source == this.final_player)
 	{
 		// mark the destination as the eventual owner of this card
-		// if this is a 
+		// if this is the first message for this card.  someone might
+		// be cheating if this is an attempt to draw the card again.
+		if (card.player)
+			console.log("CARD ALREADY PLAYED", msg);
 		card.player = msg.dest;
 	} else {
 		// this is in the chain, so validate the hash and update the deck
@@ -156,10 +175,14 @@ channel.on('draw', (status,msg) => {
 			name: "foo",
 		});
 	}
-});
+}
 
 
-channel.on('shuffle', (status,msg) => {
+/*
+ * TODO: validate that we are not in a game!
+ */
+shuffle_msg(status,msg)
+{
 	if (!status.valid)
 		return;
 
@@ -173,7 +196,7 @@ channel.on('shuffle', (status,msg) => {
 	// todo: validate that the deck only has hashes
 	if (msg.pass == msg.order.length)
 	{
-		final_deck = msg.deck.map(c => {
+		this.final_deck = msg.deck.map(c => {
 			return {
 				final_name: c.name,
 				nonces: [],
@@ -182,12 +205,12 @@ channel.on('shuffle', (status,msg) => {
 				played: false,
 			};
 		});
-		final_player = msg.order[msg.pass - 1];
-		console.log("FINAL DECK", status.peer.name, final_deck);
+		this.final_player = msg.order[msg.pass - 1];
+		console.log("FINAL DECK", status.peer.name, this.final_deck);
 	}
 
 	// if we are not the shuffler for this round, we're done
-	if (msg.order[msg.pass] != channel.public_name)
+	if (msg.order[msg.pass] != this.channel.public_name)
 		return;
 
 	// todo: validate that there was an initial pass
@@ -197,17 +220,18 @@ channel.on('shuffle', (status,msg) => {
 	// todo: validate that the previous player was the source of this message
 	// todo: implement cut-n-choose protocol to ensure fairness
 
-	deck = new Deck(msg.deck);
-	prev_player = msg.key;
+	this.deck = new Deck(msg.deck);
+	this.prev_player = msg.key;
 
-	console.log("my turn to shuffle", deck);
+	console.log("my turn to shuffle", this.deck);
 
-	channel.emit('shuffle', {
-		deck: deck.export(),
+	this.channel.emit('shuffle', {
+		deck: this.deck.export(),
 		order: msg.order,
 		pass: msg.pass + 1,
 	});
-});
+}
+}
 
 class Deck
 {

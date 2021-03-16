@@ -2,6 +2,7 @@
 
 // Create a secure channel to communicate with our peers
 let channel = new SecureChannel();
+let cards = new CardTable(channel);
 
 // Setup the chat box to talk to our peers
 let messages = document.getElementById('messages');
