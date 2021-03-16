@@ -1,5 +1,34 @@
 /*
  * Stuff for dealing and shuffling.
+ *
+ * We have to keep a deck per player, and an ordering of the players.
+ *
+ * To shuffle, we need to generate N*M+1 decks, where N is the number of players
+ * and M is the probability of detecting a cheater. After the shuffling rounds,
+ * each player chooses M decks to discard. All of the players reveal their SRA
+ * keys for those decks, which can then be checked for validity.  This leaves one
+ * encrypted deck that has probability 1/2^-M of being invalid, assuming that
+ * all but one of the players is honest.
+ *
+ * When we draw a card, it comes from the last player in the ordering.
+ * They have to reveal their name nonce, which reveals the previous player's name,
+ * and the next player reveals theirs, etc until it reaches us and we have the card
+ * encrypted with all of the previous players keys.
+ *
+ * Then we generate an ephemeral key and encrypt the card with this temporary key,
+ * and publish the card.  The previous player generates a key, encrypts the card,
+ * etc until it reachers the first player.  Who also geneates a key, but both
+ * encrypts the card with it as well as decrypts it with their real key.
+ * Then the first player decrypts with their real key, etc until it reaches
+ * us.  We now have the card encrypted with all of the temporary keys plus
+ * our real key.  Everyone reveals their temporary keys, and can validate that
+ * no one tried a blind-signing attack.  We can decrypt with our real key and
+ * learn which card we've received.
+ *
+ * To reveal the card, we publish our name nonce for it as well as the prior nonces
+ * that end up at the final name.  The previous player
+ * does the same, etc all the way to the first player.  If the chain of hashes
+ * matches the final name, then we prove that we received that card.
  */
 "use strict";
 let deck = null;
@@ -129,6 +158,7 @@ channel.on('draw', (status,msg) => {
 	}
 });
 
+
 channel.on('shuffle', (status,msg) => {
 	if (!status.valid)
 		return;
@@ -240,6 +270,7 @@ function new_deck(size=52)
 		let nonce = utils.randomBigint(256); // bits
 		let full_card = nonce << 256n | BigInt(i);
 		let name = utils.sha256bigint(full_card, 64); // 2 * 32 bytes for each hash
+
 		deck.push({
 			name: utils.bigint2hex(name,32),
 			encrypted: utils.bigint2hex(full_card,64),
