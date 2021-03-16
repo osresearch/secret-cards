@@ -78,31 +78,30 @@ function jwk2id(jwk)
 function peer_register(socket, jwk)
 {
 	let id = jwk2id(jwk);
+	let name = words("0x" + id);
 	if (socket.key)
-	{
-		let old_id = jwk2id(socket.key);
-		console.log(words("0x"+old_id) + ": replacing key");
-		delete peers[old_id];
-	}
+		peer_disconnect(socket, false);
 
 	socket.key = jwk;
-	peers[id] = jwk;
-	console.log(words("0x"+id) + ": key", jwk);
+	peers[name] = jwk;
+	console.log('register', name);
 
 	io.emit('peers', Object.values(peers));
-	console.log(peers);
+	console.log('peers', Object.keys(peers));
 }
 
-function peer_disconnect(socket)
+function peer_disconnect(socket,notify=true)
 {
 	if (!socket.key)
 		return;
 
-	let old_id = jwk2id(socket.key);
-	console.log('disconnect');
-	delete peers[old_id];
+	let id = jwk2id(socket.key);
+	let name = words("0x" + id);
+	console.log('disconnect', name);
+	delete peers[name];
 
 	// if they have registered a key, tell everyone
 	// that they left, which means any in-progress games are over
-	io.emit('disconnected', old_id);
+	if (notify)
+		io.emit('disconnected', id);
 }

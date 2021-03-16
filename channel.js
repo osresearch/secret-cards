@@ -213,7 +213,8 @@ class SecureChannel
 				continue;
 
 			// todo: cancel a game in progress
-			delete peers[id];
+			console.log('disconnect', this.peers[id].name);
+			delete this.peers[id];
 			//removeElement("peer-"+id);
 		}
 
@@ -227,6 +228,7 @@ class SecureChannel
 
 			// new peer has joined; import their public key
 			// todo: add them in observer mode
+			// todo: validate their key parameters
 			this.peers[id] = peer;
 			window.crypto.subtle.importKey(
 				'jwk',
@@ -236,6 +238,7 @@ class SecureChannel
 				peer.key_ops // [ 'verify' ]
 			).then((peer_pub) => {
 				peer.key = peer_pub;
+				console.log('register', peer.name);
 			});
 
 /*
