@@ -33,7 +33,7 @@
 "use strict";
 
 function make_words(x) {
-	return x.map(i => words.bigint2words(BigInt("0x" + i), 4));
+	return x.map(i => words.bigint2words(BigInt(i), 4));
 }
 
 /*
@@ -52,11 +52,14 @@ constructor(channel)
 	this.final_deck = null;
 	this.final_player = null;
 	this.prev_player = null;
+	this.next_player = null;
 	this.drawn_card = null;
 
 	this.channel.on('shuffle', (status,msg) => this.shuffle_msg(status,msg));
 	this.channel.on('draw', (status,msg) => this.draw_msg(status,msg));
 	this.channel.on('wrap', (status,msg) => this.wrap_msg(status,msg));
+	this.channel.on('unwrap', (status,msg) => this.unwrap_msg(status,msg));
+	this.channel.on('unseal', (status,msg) => this.unseal_msg(status,msg));
 }
 
 shuffle(num_cards=8)
@@ -110,13 +113,16 @@ draw_card(name=null)
 	console.log("DRAWING", name);
 	this.channel.emit('draw', {
 		dest: this.player,
-		source: this.final_player,
+		next: this.final_player,
 		final_name: card_name,
 		name: card_name,
 		nonce: null,
 	});
 }
 
+/*
+ * Draw messages flow from last to first player.
+ */
 draw_msg(status,msg)
 {
 	if (!status.valid)
@@ -131,7 +137,7 @@ draw_msg(status,msg)
 		return;
 	}
 
-	if (msg.source == this.final_player)
+	if (msg.next == this.final_player)
 	{
 		// mark the destination as the eventual owner of this card
 		// if this is the first message for this card.  someone might
@@ -140,7 +146,7 @@ draw_msg(status,msg)
 			console.log("CARD ALREADY PLAYED", msg);
 		console.log("Dealing to ", make_words([msg.dest]));
 		card.player = msg.dest;
-		card.known_name = BigInt("0x" + msg.final_name);
+		card.known_name = BigInt(msg.final_name);
 	} else
 	if (!card.known_name)
 	{
@@ -148,8 +154,8 @@ draw_msg(status,msg)
 		return;
 	} else {
 		// this is in the chain, so validate the hash and update the deck
-		const nonce = BigInt("0x" + msg.nonce);
-		const name = BigInt("0x" + msg.name);
+		const nonce = BigInt(msg.nonce);
+		const name = BigInt(msg.name);
 		const full_card = nonce << 256n | name;
 		const next_name = utils.sha256bigint(full_card, 64);
 		if (next_name != card.known_name)
@@ -162,13 +168,14 @@ draw_msg(status,msg)
 		console.log("card", msg.final_name, card.nonces);
 	}
 
-	if (msg.source != this.player)
+	if (msg.next != this.player)
 	{
 		// nothing else for us to do with this one until
 		// they ask us for it.
 		return;
 	}
 
+	// if this is a card for us, then we switch to the phase2 of the draw protocol
 	if (msg.dest == this.player)
 		return this.draw_phase2(msg, card);
 
@@ -191,13 +198,16 @@ draw_msg(status,msg)
 	console.log("passing on nonce", my_card);
 	this.channel.emit('draw', {
 		dest: msg.dest,
+		next: this.prev_player,
 		final_name: msg.final_name,
 		name: utils.bigint2hex(my_card.prev_name, 32),
 		nonce: utils.bigint2hex(my_card.nonce, 16),
-		source: this.prev_player,
 	});
 }
 
+/*
+ * Phase two is to wrap the encrypted card and flows towards the first player
+ */
 draw_phase2(msg,card)
 {
 	// this is destined for us, switch to phase 2 of the draw
@@ -219,7 +229,7 @@ draw_phase2(msg,card)
 		let orig_name = utils.bigint2hex(card.our_card.prev_name, 32);
 		card.orig_card = this.initial_deck[orig_name];
 		card.nonces.push(card.our_card.nonce);
-		console.log("FOR US!", orig_name, card);
+		console.log("FOR US!", card.orig_card.encrypted, orig_name, card);
 		return;
 	}
 
@@ -228,21 +238,208 @@ draw_phase2(msg,card)
 	// generate a temporary key and encrypt the card with it
 	if (card.temp_key)
 		console.log("OVERLAPPING DEALS!");
+
 	card.temp_key = sra.SRA();
 
-	let reencrypted = card.temp_key.encrypt(card.known_name);
+	// wrap the encrypted card with both our original key and the temporary key
+	let reencrypted = card.temp_key.encrypt(this.deck.sra.encrypt(card.our_card.encrypted));
 	this.channel.emit('wrap', {
 		dest: msg.dest,
+		next: this.prev_player,
 		final_name: msg.final_name,
-		source: this.prev_player,
 		encrypted: utils.bigint2hex(reencrypted, 80),
 	});
 }
 
+/*
+ * TODO: validate that we're wrapping for the right player
+ * TODO: validate the wrapped messages once the keys are revealed
+ *
+ * wrap continues phase 2 flowing towards first player
+ */
 wrap_msg(status,msg)
 {
+	if (!status.valid)
+		return;
+
 	console.log("WRAP", msg);
+
+	const card = this.final_deck[msg.final_name];
+	if (!card)
+	{
+		console.log("WRAP UNKNOWN CARD", msg);
+		return;
+	}
+
+	if (msg.next != this.player)
+	{
+		// just store the wrapped message
+		//card.wrapped.push(msg);
+		return;
+	}
+
+	// generate a temporary key and encrypt the card with it as a wrapper
+	if (card.temp_key)
+		console.log("OVERLAPPING DEALS!", card);
+
+	card.temp_key = sra.SRA();
+
+	let encrypted = BigInt(msg.encrypted);
+	let reencrypted = card.temp_key.encrypt(encrypted);
+
+	if (this.prev_player)
+	{
+		console.log("Wrapping", card);
+
+		this.channel.emit('wrap', {
+			dest: msg.dest,
+			next: this.prev_player,
+			final_name: msg.final_name,
+			encrypted: utils.bigint2hex(reencrypted, 80),
+		});
+	} else {
+		// special case if we're the first player
+		// start the unwrapping process
+		console.log("Unwrapping", card);
+		let unwrapped = this.deck.sra.decrypt(reencrypted);
+
+		this.channel.emit('unwrap', {
+			dest: msg.dest,
+			next: this.next_player,
+			final_name: msg.final_name,
+			encrypted: utils.bigint2hex(unwrapped, 80),
+		});
+	}
 }
+
+/*
+ * TODO: validate that we're wrapping for the right player
+ * TODO: validate the wrapped messages once the keys are revealed
+ * TODO: only process unseal messages if we are sure we have all of them
+ *
+ * Unwraps flow outwards from first player to last player
+ */
+unwrap_msg(status,msg)
+{
+	if (!status.valid)
+		return;
+
+	console.log("UNWRAP", msg);
+
+	const card = this.final_deck[msg.final_name];
+	if (!card)
+	{
+		console.log("WRAP UNKNOWN CARD", msg);
+		return;
+	}
+
+	if (msg.next != this.player)
+	{
+		// just store the wrapped message
+		//card.wrapped.push(msg);
+		return;
+	}
+
+	// if we haven't created a temp key, then something is wrong in the
+	// protocol or someone is cheating.
+	if (!card.temp_key)
+	{
+		console.log("No temp key?", card);
+		return;
+	}
+
+	// if we're the final destination for this wrapped card,
+	// then we now have our card, encrypted with all of the temp keys.
+	// ask everyone for their temp keys to finish the unsealing process.
+	// start by revealing our temp key
+	if (msg.dest == this.player)
+	{
+		let encrypted = BigInt(msg.encrypted);
+		//card.unwrapped = this.deck.sra.decrypt(card.temp_key.decrypt(encrypted));
+		card.unwrapped = this.deck.sra.decrypt(encrypted);
+
+		console.log("starting unseal", card.unwrapped);
+		this.channel.emit('unseal', {
+			dest: msg.dest,
+			next: this.prev_player,
+			final_name: msg.final_name,
+			key: utils.bigint2hex(card.temp_key.d, 80),
+		});
+
+		return;
+	}
+
+	// continue the flow outwards
+	let encrypted = BigInt(msg.encrypted);
+	let decrypted = this.deck.sra.decrypt(encrypted);
+
+	if (!this.next_player)
+	{
+		console.log("protocol error? final player not the destination?", msg);
+		return;
+	}
+
+	console.log("continuing unwrap", card);
+
+	this.channel.emit('unwrap', {
+		dest: msg.dest,
+		next: this.next_player,
+		final_name: msg.final_name,
+		encrypted: utils.bigint2hex(decrypted, 80),
+	});
+}
+
+/*
+ * TODO: validate that we're wrapping for the right player
+ * TODO: validate the wrapped messages once the keys are revealed
+ * TODO: only process unseal messages if we are sure we have all of them
+ */
+unseal_msg(status,msg)
+{
+	if (!status.valid)
+		return;
+
+	console.log("UNSEAL", msg);
+
+	const card = this.final_deck[msg.final_name];
+	if (!card)
+	{
+		console.log("UNSEAL UNKNOWN CARD", msg);
+		return;
+	}
+
+	if (card.unwrapped)
+	{
+		let d = BigInt(msg.key);
+		card.unwrapped = sra.modExp(card.unwrapped, d, this.deck.sra.p);
+		let hex = utils.bigint2hex(card.unwrapped, 80);
+
+		// this was the final value, so the card should be good
+		if (msg.next == null && msg.dest == this.player)
+			console.log("FINAL VALUE:", hex);
+		else
+			console.log("Partial unseal: ", hex);
+	}
+
+	if (msg.next != this.player)
+		return;
+
+	if (!card.temp_key)
+	{
+		console.log("NO TEMP KEY TO UNSEAL", msg, card);
+		return;
+	}
+	
+	this.channel.emit('unseal', {
+		final_name: msg.final_name,
+		dest: msg.dest,
+		key: utils.bigint2hex(card.temp_key.d, 80),
+		next: this.prev_player,
+	});
+
+	//card.temp_key = null;
+}
+
 
 /*
  * TODO: validate that we are not in a game!
@@ -277,7 +474,7 @@ shuffle_msg(status,msg)
 				console.log("DUPLICATE CARD!", c);
 
 			this.final_deck[c.name] = {
-				final_name: BigInt("0x" + c.name),
+				final_name: BigInt(c.name),
 				nonces: [],
 				name: null,
 				value: null,
@@ -303,10 +500,15 @@ shuffle_msg(status,msg)
 	this.deck = new Deck(msg.deck);
 	this.players = msg.order;
 
-	if (msg.pass == 0)
-		this.prev_player = null;
-	else
+	if (msg.pass != 0)
 		this.prev_player = status.peer.id;
+	else
+		this.prev_player = null;
+
+	if (msg.pass < msg.order.length)
+		this.next_player = msg.order[msg.pass+1];
+	else
+		this.next_player = null;
 
 	console.log("my turn to shuffle", this.deck);
 
@@ -330,8 +532,8 @@ class Deck
 		for(let c of prev_deck)
 		{
 			// un-stringify the name and encrypted value
-			let prev_name = BigInt("0x" + c.name);
-			let encrypted = BigInt("0x" + c.encrypted);
+			let prev_name = BigInt(c.name);
+			let encrypted = BigInt(c.encrypted);
 
 			let nonce = utils.randomBigint(128); // bits
 			let full_card = nonce << 256n | prev_name; // new nonce || sha256 of old
@@ -406,8 +608,8 @@ function new_deck_validate(deck, deck_size=8)
 	for(let i = 0 ; i < deck_size ; i++)
 	{
 		const card = deck[i];
-		const value = BigInt("0x" + card.encrypted);
-		const name = BigInt("0x" + card.name);
+		const value = BigInt(card.encrypted);
+		const name = BigInt(card.name);
 		const mask = (1n << 256n) - 1n;
 		const card_value = value & mask;
 		const hash_name = utils.sha256bigint(value, 64); // 2 * 32 bytes for each hash
