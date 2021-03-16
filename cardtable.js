@@ -52,7 +52,7 @@ function draw_card(name=null)
 	const card_name = utils.bigint2hex(name, 64);
 
 	channel.emit('draw', {
-		dest: public_name,
+		dest: channel.public_name,
 		source: final_player,
 		final_name: card_name,
 		name: null,
@@ -93,17 +93,17 @@ channel.on('draw', (status,msg) => {
 		card.nonces.push(nonce);
 	}
 
-	if (msg.source != public_name)
+	if (msg.source != channel.public_name)
 		return;
 
-	if (msg.dest == public_name)
+	if (msg.dest == channel.public_name)
 	{
 		// this is destined for us
 	}
 
 	// todo: ensure that dest is before me in the order
 	// this one is for me to decrypt and fill in
-	if (msg.dest != public_name)
+	if (msg.dest != channel.public_name)
 	{
 		const card = deck[msg.name];
 		if (!card)
