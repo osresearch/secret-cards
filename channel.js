@@ -5,13 +5,14 @@
 
 function array2hex(bytes)
 {
-	return Array.from(new Uint8Array(bytes))
+	return "0x" + Array.from(new Uint8Array(bytes))
 		.map( c => ('00' + c.toString(16)).slice(-2) )
 		.join('');
 }
 
-function hex2array(s)
+function hex2array(s_in)
 {
+	let s = s_in.replace(/^0x/,"");
 	let bytes = [];
 	for(let i = 0 ; i < s.length ; i += 2)
 		bytes.push(parseInt(s.substr(i, 2), 16));
@@ -24,7 +25,7 @@ function hex2array(s)
 function jwk2id(jwk)
 {
 	let id = jwk.x + "|" + jwk.y;
-	return sha256.sha256hex(id.split(''));
+	return "0x" + sha256.sha256hex(id.split(''));
 }
 
 
@@ -88,7 +89,11 @@ class SecureChannel
 	on(dest, callback)
 	{
 		this.socket.on(dest, (msg) =>
-			this.validate_message(msg).then((status) => callback(status,msg.msg))
+			this.validate_message(msg).then((status) => {
+				if (!status.valid)
+					console.log("ERRROR", status, msg);
+				callback(status,msg.msg)
+			})
 		);
 	}
 
@@ -200,7 +205,7 @@ class SecureChannel
 			// don't trust the server's hash; do it ourselves
 			let id = jwk2id(new_peer);
 			new_peer.id = id;
-			new_peer.name = words.bigint2words("0x" + id);
+			new_peer.name = words.bigint2words(id);
 			new_peer.seq = -1;
 			new_peer.cheats = 0;
 			new_peers[id] = new_peer;
