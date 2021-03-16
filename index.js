@@ -43,16 +43,15 @@ io.on('connection', (socket) => {
 	socket.on('disconnect', () => peer_disconnect(socket))
 	socket.on('register', (msg) => peer_register(socket, msg));
 
-	socket.on('chat', (msg) => {
-		// ignore the signature; that is for others to verify
-		console.log('chat:', msg.msg);
-		io.emit('chat', msg);
-	});
-
-	socket.on('shuffle', (msg) => {
-		console.log('shuffle:', msg.msg);
-		io.emit('shuffle', msg);
-	});
+	// broadcast all incoming messages from any peer.
+	// ignore the signature; that is for others to verify
+	for(let topic of ["chat", "shuffle", "draw", "wrap"])
+	{
+		socket.on(topic, (msg) => {
+			console.log(topic + ":", msg.msg);
+			io.emit(topic, msg);
+		});
+	}
 });
 
 http.listen(4423, () => {
