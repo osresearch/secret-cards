@@ -54,7 +54,7 @@ class SRA
 			// choose a random encryption key and check to see if it
 			// is relatively prime to the modulus.
 			let k = utils.randomBigint(bits);
-			console.log("trying", k);
+			//console.log("SRA: trying", k);
 
 			// gcd(k,phi_p) == 1 means that they are relatively prime
 			let g = this.egcd(k, phi_p);
