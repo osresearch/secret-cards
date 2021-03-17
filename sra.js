@@ -28,10 +28,12 @@ function modExp(a, e, n)
 
 	while (e != 0n)
 	{
-		if (e % 2n)
+		//if (e % 2n)
+		if (e & 1n)
 			r = (r * x) % n;
 
-		e /= 2n;
+		//e /= 2n;
+		e >>= 1n;
 		x = (x * x) % n;
 	}
 
@@ -47,7 +49,7 @@ class SRA
 
 		let phi_p = this.p - 1n;
 		let dec_digits = (""+ phi_p).length;
-		let bits = dec_digits * 3;
+		let bits = 600; //dec_digits * 3;
 		
 		while(true)
 		{
