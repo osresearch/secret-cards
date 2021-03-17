@@ -236,7 +236,7 @@ reveal_msg(status,msg)
 			card.player = msg.dest;
 
 		card.orig_card = orig_card;
-		card.value = orig_card.encrypted;
+		card.value = BigInt(orig_card.encrypted);
 		console.log("VALIDATED", dest_name, card.value);
 	}
 
@@ -274,11 +274,17 @@ hands()
 		let player = card.player;
 		if (!player)
 			player = "deck";
+		else
+		if (player.substr(0,2) === "0x")
+			player = make_words([player])[0];
 
 		if (!(player in hands))
 			hands[player] = [];
 
-		hands[player].push(card); //.value == null ? null : card.value);
+		hands[player].push({
+			value: card.value ? card.value & 0xFFFFFFFFFFFFn : null,
+			name: hash,
+		});
 	}
 
 	return hands;
@@ -301,7 +307,7 @@ receive_card(card, value)
 	}
 
 	card.orig_card = this.initial_deck[card_name];
-	card.value = value & 0xFFFFFFFFFFFFFFFFn;
+	card.value = value;
 
 	console.log("DEALT TO ME:", card.value);
 }
