@@ -35,6 +35,7 @@
 function make_words(x) {
 	return x.map(i => words.bigint2words(BigInt(i), 4));
 }
+function peername(status) { return words.bigint2words(BigInt(status.peer.id)) }
 
 /*
  * TODO: Cut-n-choose shuffle protocol
@@ -86,7 +87,7 @@ draw_random_card(deck)
 	for(let i in deck)
 	{
 		let c = deck[i];
-		if (!c.played)
+		if (!c.player)
 			return c.final_name;
 	}
 
@@ -110,7 +111,7 @@ draw_card(name=null)
 	this.drawn_card = name;
 	const card_name = utils.bigint2hex(name, 32);
 
-	console.log("DRAWING", name);
+	console.log("DRAW INITIAL", card_name);
 	this.channel.emit('draw', {
 		dest: this.player,
 		next: this.final_player,
@@ -120,6 +121,48 @@ draw_card(name=null)
 	});
 }
 
+hands()
+{
+	let hands = {};
+	for(let hash in this.final_deck)
+	{
+		let card = this.final_deck[hash];
+		let player = card.player;
+		if (!player)
+			player = "deck";
+
+		if (!(player in hands))
+			hands[player] = [];
+
+		hands[player].push(card.value == null ? null : card.value);
+	}
+
+	return hands;
+}
+
+
+/*
+ * Receive a card with the final value.
+ * Make sure it was in the initial deck and not a duplicate, etc
+ */
+receive_card(card, value)
+{
+	const card_hash = utils.sha256bigint(value, 64);
+	const card_name = utils.bigint2hex(card_hash, 32);
+
+	if (!(card_name in this.initial_deck))
+	{
+		console.log("BAD CARD", card, value, card_name);
+		return;
+	}
+
+	card.orig_card = this.initial_deck[card_name];
+	card.value = value & 0xFFFFFFFFFFFFFFFFn;
+
+	console.log("DEALT TO ME:", card.value);
+}
+
+
 /*
  * Draw messages flow from last to first player.
  */
@@ -128,12 +171,12 @@ draw_msg(status,msg)
 	if (!status.valid)
 		return;
 
-	console.log("draw", msg);
+	//console.log("DRAW", make_words(msg.dest), msg.final_name);
 
 	const card = this.final_deck[msg.final_name];
 	if (!card)
 	{
-		console.log("UNKNOWN CARD", msg);
+		console.log("DRAW: UNKNOWN CARD", msg);
 		return;
 	}
 
@@ -143,14 +186,18 @@ draw_msg(status,msg)
 		// if this is the first message for this card.  someone might
 		// be cheating if this is an attempt to draw the card again.
 		if (card.player)
-			console.log("CARD ALREADY PLAYED", msg);
-		console.log("Dealing to ", make_words([msg.dest]));
+		{
+			console.log("DRAW: CARD ALREADY PLAYED", msg);
+			return;
+		}
+
+		console.log("DRAW:", make_words([msg.dest])[0], msg.final_name);
 		card.player = msg.dest;
 		card.known_name = BigInt(msg.final_name);
 	} else
 	if (!card.known_name)
 	{
-		console.log("deal out of order? no nonces known", card);
+		console.log("DRAW: protocol error: no nonces known", card);
 		return;
 	} else {
 		// this is in the chain, so validate the hash and update the deck
@@ -160,12 +207,12 @@ draw_msg(status,msg)
 		const next_name = utils.sha256bigint(full_card, 64);
 		if (next_name != card.known_name)
 		{
-			console.log("BAD NONCE", next_name, card.known_name, card, msg);
+			console.log("DRAW: BAD NONCE", next_name, card.known_name, card, msg);
 			return;
 		}
 		card.known_name = name;
 		card.nonces.push(nonce);
-		console.log("card", msg.final_name, card.nonces);
+		console.log("DRAW: nonces", msg.final_name, card.nonces);
 	}
 
 	if (msg.next != this.player)
@@ -182,26 +229,24 @@ draw_msg(status,msg)
 	// todo: ensure that dest is before me in the order
 	// this one is for me to decrypt and fill in
 	const my_card = this.deck.deck[msg.name];
-	console.log("my card", my_card);
+	//console.log("my card", my_card);
 	if (!my_card)
 	{
-		console.log("UNKNOWN CARD", msg);
+		console.log("DRAW: UNKNOWN CARD", msg);
 		return;
 	}
 
-	if (my_card.played)
-	{
-		console.log("PLAYED CARD", msg);
-		return;
-	}
+	const prev_name = utils.bigint2hex(my_card.prev_name, 32);
+	const my_nonce = utils.bigint2hex(my_card.nonce, 16);
 
-	console.log("passing on nonce", my_card);
+	console.log("DRAW: ", msg.final_name, my_nonce);
+
 	this.channel.emit('draw', {
 		dest: msg.dest,
 		next: this.prev_player,
 		final_name: msg.final_name,
-		name: utils.bigint2hex(my_card.prev_name, 32),
-		nonce: utils.bigint2hex(my_card.nonce, 16),
+		name: prev_name,
+		nonce: my_nonce,
 	});
 }
 
@@ -225,15 +270,12 @@ draw_phase2(msg,card)
 	if (!this.prev_player)
 	{
 		// special case: if we're the first player, then we do not need
-		// to do anything.  it is OURS!
-		let orig_name = utils.bigint2hex(card.our_card.prev_name, 32);
-		card.orig_card = this.initial_deck[orig_name];
+		// to do anything other than record our nonce for later proof.  it is OURS!
 		card.nonces.push(card.our_card.nonce);
-		console.log("FOR US!", card.orig_card.encrypted, orig_name, card);
-		return;
+		return this.receive_card(card, card.our_card.encrypted);
 	}
 
-	console.log("Wrapping", card);
+	console.log("WRAP INITIAL", card_name);
 
 	// generate a temporary key and encrypt the card with it
 	if (card.temp_key)
@@ -243,6 +285,7 @@ draw_phase2(msg,card)
 
 	// wrap the encrypted card with both our original key and the temporary key
 	let reencrypted = card.temp_key.encrypt(this.deck.sra.encrypt(card.our_card.encrypted));
+
 	this.channel.emit('wrap', {
 		dest: msg.dest,
 		next: this.prev_player,
@@ -262,54 +305,57 @@ wrap_msg(status,msg)
 	if (!status.valid)
 		return;
 
-	console.log("WRAP", msg);
+	console.log("WRAP", peername(status), msg.final_name);
 
 	const card = this.final_deck[msg.final_name];
 	if (!card)
 	{
-		console.log("WRAP UNKNOWN CARD", msg);
+		console.log("WRAP: UNKNOWN CARD", msg);
 		return;
 	}
 
-	if (msg.next != this.player)
+	// just store the wrapped message
+	if (status.peer.id in card.wrapped)
 	{
-		// just store the wrapped message
-		//card.wrapped.push(msg);
+		console.log("WRAP: peer sent multiple wraps?", peername(status), msg);
 		return;
 	}
+
+	let encrypted = BigInt(msg.encrypted);
+	card.wrapped[status.peer.id] = encrypted;
+
+	if (msg.next != this.player)
+		return;
 
 	// generate a temporary key and encrypt the card with it as a wrapper
 	if (card.temp_key)
-		console.log("OVERLAPPING DEALS!", card);
+		console.log("WRAP: OVERLAPPING DEALS!", msg);
 
 	card.temp_key = sra.SRA();
 
-	let encrypted = BigInt(msg.encrypted);
 	let reencrypted = card.temp_key.encrypt(encrypted);
 
+	this.channel.emit('wrap', {
+		dest: msg.dest,
+		next: this.prev_player,
+		final_name: msg.final_name,
+		encrypted: utils.bigint2hex(reencrypted, 80),
+	});
+
 	if (this.prev_player)
-	{
-		console.log("Wrapping", card);
+		return;
 
-		this.channel.emit('wrap', {
-			dest: msg.dest,
-			next: this.prev_player,
-			final_name: msg.final_name,
-			encrypted: utils.bigint2hex(reencrypted, 80),
-		});
-	} else {
-		// special case if we're the first player
-		// start the unwrapping process
-		console.log("Unwrapping", card);
-		let unwrapped = this.deck.sra.decrypt(reencrypted);
+	// special case if we're the first player
+	// start the unwrapping process
+	console.log("UNWRAP INITIAL", msg.final_name);
+	let unwrapped = this.deck.sra.decrypt(reencrypted);
 
-		this.channel.emit('unwrap', {
-			dest: msg.dest,
-			next: this.next_player,
-			final_name: msg.final_name,
-			encrypted: utils.bigint2hex(unwrapped, 80),
-		});
-	}
+	this.channel.emit('unwrap', {
+		dest: msg.dest,
+		next: this.next_player,
+		final_name: msg.final_name,
+		encrypted: utils.bigint2hex(unwrapped, 80),
+	});
 }
 
 /*
@@ -324,69 +370,77 @@ unwrap_msg(status,msg)
 	if (!status.valid)
 		return;
 
-	console.log("UNWRAP", msg);
+	console.log("UNWRAP", peername(status), msg.final_name);
 
 	const card = this.final_deck[msg.final_name];
 	if (!card)
 	{
-		console.log("WRAP UNKNOWN CARD", msg);
+		console.log("UNWRAP: UNKNOWN CARD", msg);
 		return;
 	}
 
-	if (msg.next != this.player)
+	if (!(status.peer.id in card.wrapped))
 	{
-		// just store the wrapped message
-		//card.wrapped.push(msg);
+		console.log("UNWRAP: Peer didn't send intial message?", peername(status), msg);
 		return;
 	}
+
+	// store the latest version of the unlocked message
+	let encrypted = BigInt(msg.encrypted);
+	card.encrypted = encrypted;
+
+	if (msg.next != this.player)
+		return;
 
 	// if we haven't created a temp key, then something is wrong in the
 	// protocol or someone is cheating.
 	if (!card.temp_key)
 	{
-		console.log("No temp key?", card);
+		console.log("UNWRAP: No temp key?", card);
 		return;
 	}
 
-	// if we're the final destination for this wrapped card,
-	// then we now have our card, encrypted with all of the temp keys.
-	// ask everyone for their temp keys to finish the unsealing process.
-	// start by revealing our temp key
-	if (msg.dest == this.player)
-	{
-		let encrypted = BigInt(msg.encrypted);
-		//card.unwrapped = this.deck.sra.decrypt(card.temp_key.decrypt(encrypted));
-		card.unwrapped = this.deck.sra.decrypt(encrypted);
+	// decrypt with our permanent key.
+	// if we're an intermediate we sent this on.
+	// if we're the destination for the card, then we do not share it.
+	let decrypted = this.deck.sra.decrypt(encrypted);
 
-		console.log("starting unseal", card.unwrapped);
+	if (msg.dest != this.player)
+	{
+		// we're an intermediate player in the wrapping process
+		// continue the flow outwards by removing our original key
+		// (which leaves our temporary key in place)
+
+		if (!this.next_player)
+		{
+			console.log("UNWRAP: protocol error? final player not the destination?", msg);
+			return;
+		}
+
+		console.log("UNWRAP", msg.final_name);
+
+		this.channel.emit('unwrap', {
+			dest: msg.dest,
+			next: this.next_player,
+			final_name: msg.final_name,
+			encrypted: utils.bigint2hex(decrypted, 80),
+		});
+	} else {
+		// if we're the final destination for this wrapped card,
+		// then we now have our card, encrypted with all of the temp keys.
+		// we can decrypt with our original key, leaving only the temp keys.
+		card.unwrapped = decrypted;
+
+		// start by revealing our temp key, which asks everyone else
+		// to reveal their temp keys to finish the unsealing process.
+		console.log("UNSEAL INITIAL", msg.final_name);
 		this.channel.emit('unseal', {
 			dest: msg.dest,
 			next: this.prev_player,
 			final_name: msg.final_name,
 			key: utils.bigint2hex(card.temp_key.d, 80),
 		});
-
-		return;
 	}
-
-	// continue the flow outwards
-	let encrypted = BigInt(msg.encrypted);
-	let decrypted = this.deck.sra.decrypt(encrypted);
-
-	if (!this.next_player)
-	{
-		console.log("protocol error? final player not the destination?", msg);
-		return;
-	}
-
-	console.log("continuing unwrap", card);
-
-	this.channel.emit('unwrap', {
-		dest: msg.dest,
-		next: this.next_player,
-		final_name: msg.final_name,
-		encrypted: utils.bigint2hex(decrypted, 80),
-	});
 }
 
 /*
@@ -399,34 +453,58 @@ unseal_msg(status,msg)
 	if (!status.valid)
 		return;
 
-	console.log("UNSEAL", msg);
+	console.log("UNSEAL", peername(status), msg.final_name);
 
 	const card = this.final_deck[msg.final_name];
 	if (!card)
 	{
-		console.log("UNSEAL UNKNOWN CARD", msg);
+		console.log("UNSEAL: UNKNOWN CARD", msg);
 		return;
 	}
 
-	if (card.unwrapped)
+	if (!(status.peer.id in card.wrapped))
 	{
-		let d = BigInt(msg.key);
-		card.unwrapped = sra.modExp(card.unwrapped, d, this.deck.sra.p);
-		let hex = utils.bigint2hex(card.unwrapped, 80);
-
-		// this was the final value, so the card should be good
-		if (msg.next == null && msg.dest == this.player)
-			console.log("FINAL VALUE:", hex);
-		else
-			console.log("Partial unseal: ", hex);
+		console.log("UNSEAL: peer did not wrap card", msg, card);
+		return;
 	}
+
+	// validate that the wrapped version decrypts with this key
+	// so that they did not launch a blind-signing attack
+	let d = BigInt(msg.key);
+/*
+	console.log("unsealing", card);
+	let m1 = BigInt(card.wrapped[status.peer.id]);
+
+	if (sra.modExp(m1, d, this.deck.sra.p) != m2)
+	{
+		console.log("UNSEAL: peer used wrong unwrapping key", peername(status), card, msg);
+		return;
+	}
+*/
+
+	// if this is the first unsealing key we've received,
+	// update the unwrapped value with the last encrypted one we received.
+	if (card.unwrapped == null)
+		card.unwrapped = card.encrypted;
+
+	card.unwrapped = sra.modExp(card.unwrapped, d, this.deck.sra.p);
+	let hex = utils.bigint2hex(card.unwrapped, 80);
+
+	// this was the final value, so the card should be good
+	if (msg.next == null && msg.dest == this.player)
+	{
+		this.receive_card(card, card.unwrapped);
+		return;
+	}
+
+	//console.log("Partial unseal: ", hex);
 
 	if (msg.next != this.player)
 		return;
 
 	if (!card.temp_key)
 	{
-		console.log("NO TEMP KEY TO UNSEAL", msg, card);
+		console.log("UNSEAL: protocol error? no temp key for card", msg, card);
 		return;
 	}
 	
@@ -436,8 +514,6 @@ unseal_msg(status,msg)
 		key: utils.bigint2hex(card.temp_key.d, 80),
 		next: this.prev_player,
 	});
-
-	//card.temp_key = null;
 }
 
 
@@ -478,7 +554,9 @@ shuffle_msg(status,msg)
 				nonces: [],
 				name: null,
 				value: null,
-				played: false,
+				player: null,
+				wrapped: {},
+				encrypted: null,
 			};
 		}
 
