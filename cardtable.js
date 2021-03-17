@@ -32,6 +32,8 @@
  */
 "use strict";
 
+const default_deck_size = 52;
+
 function make_words(x) {
 	return x.map(i => words.bigint2words(BigInt(i), 4));
 }
@@ -61,9 +63,10 @@ constructor(channel)
 	this.channel.on('wrap', (status,msg) => this.wrap_msg(status,msg));
 	this.channel.on('unwrap', (status,msg) => this.unwrap_msg(status,msg));
 	this.channel.on('unseal', (status,msg) => this.unseal_msg(status,msg));
+	this.channel.on('reveal', (status,msg) => this.reveal_msg(status,msg));
 }
 
-shuffle(num_cards=52)
+shuffle(num_cards=default_deck_size)
 {
 	// publish a set of proposed cards,
 	// and an ordering of the players to
@@ -121,6 +124,147 @@ draw_card(name=null)
 	});
 }
 
+
+reveal(card, dest_name=null)
+{
+	if (typeof(card) === "bigint")
+	{
+		let card_hex = utils.bigint2hex(card, 32);
+		card = this.final_deck[card_hex];
+		if (!card)
+		{
+			console.log("REVEAL: unknown final card?", card_hex);
+			return;
+		}
+	}
+
+	// make sure we have the card
+	if (card.player && card.player != this.player)
+	{
+		console.log("REVEAL: not our card?", card);
+		return;
+	}
+
+	// if we're starting at the top to reveal a card,
+	// we don't have a previous name for it.
+	let prev_name;
+	let dest;
+	let next;
+	let nonces;
+
+	if (dest_name)
+	{
+		// start at the last player to reveal an unplayed card
+		dest = dest_name;
+		next = this.final_player;
+		prev_name = card.final_name;
+		nonces = [];
+	} else {
+		// start at the next player to reveal a card we've drawn
+		dest = this.player;
+		next = this.prev_player;
+		prev_name = card.our_card.prev_name;
+		nonces = card.nonces.map(n => utils.bigint2hex(n, 32));
+	}
+
+	this.channel.emit('reveal', {
+		dest: dest,
+		next: next,
+		final_name: utils.bigint2hex(card.final_name, 32),
+		name: utils.bigint2hex(prev_name, 32),
+		nonces: nonces,
+	});
+}
+
+reveal_msg(status,msg)
+{
+	console.log("REVEAL", peername(status), msg.final_name, msg.nonces);
+
+	let card = this.final_deck[msg.final_name];
+	if (!card)
+	{
+		console.log("REVEAL: bad final name?", msg);
+		return;
+	}
+
+	// todo: validate that this player has drawn this card?
+	// otherwise we'll allow a deal to the table or other string
+	if (card.player && msg.dest != card.player)
+	{
+		console.log("REVEAL: unauthorized reveal?", peername(status), msg);
+		return;
+	}
+
+	// not all games would require that, for instance turning
+	// over the top card on the deck without drawing it.
+
+	// validate the chain of nonces back to the final card
+	let name = BigInt(msg.name);
+
+	for(let nonce_string of msg.nonces.slice().reverse())
+	{
+		let nonce = BigInt(nonce_string);
+		let new_name = nonce << 256n | name;
+		name = utils.sha256bigint(new_name, 64);
+	}
+
+	name = utils.bigint2hex(name, 32);
+
+	if (name != msg.final_name)
+	{
+		console.log("REVEAL: Bad string of nonces?", name, msg);
+		return;
+	}
+
+	if (msg.next == null)
+	{
+		// this is from the very first player, which means that
+		// the name should appear in the original deck.  if not
+		// then the dealer has cheated.
+		let orig_card = this.initial_deck[msg.name];
+		if (!orig_card)
+		{
+			console.log("REVEAL: not in initial deck?", msg);
+			return;
+		}
+
+		let dest_name = msg.dest;
+		if (dest_name.substr(0,2) == "0x")
+			dest_name = make_words([msg.dest])[0];
+
+		if (!card.player)
+			card.player = msg.dest;
+
+		card.orig_card = orig_card;
+		card.value = orig_card.encrypted;
+		console.log("VALIDATED", dest_name, card.value);
+	}
+
+	if (msg.next != this.player)
+		return;
+
+	// we need to reveal our nonce for this name
+	let my_card = this.deck.deck[msg.name];
+	if (!my_card)
+	{
+		console.log("REVEAL: not one of my cards?", msg);
+		return;
+	}
+
+	// todo: validate that the chain of nonces matches our chain
+	// that we have recorded from previous announcements.
+	//card.nonces = msg.nonces;
+	msg.nonces.push(utils.bigint2hex(my_card.nonce, 32));
+
+	this.channel.emit('reveal', {
+		dest: msg.dest,
+		next: this.prev_player,
+		final_name: msg.final_name,
+		name: utils.bigint2hex(my_card.prev_name, 32),
+		nonces: msg.nonces,
+	});
+}
+
 hands()
 {
 	let hands = {};
@@ -134,7 +278,7 @@ hands()
 		if (!(player in hands))
 			hands[player] = [];
 
-		hands[player].push(card.value == null ? null : card.value);
+		hands[player].push(card); //.value == null ? null : card.value);
 	}
 
 	return hands;
@@ -237,7 +381,7 @@ draw_msg(status,msg)
 	}
 
 	const prev_name = utils.bigint2hex(my_card.prev_name, 32);
-	const my_nonce = utils.bigint2hex(my_card.nonce, 16);
+	const my_nonce = utils.bigint2hex(my_card.nonce, 32);
 
 	console.log("DRAW: ", msg.final_name, my_nonce);
 
@@ -266,12 +410,12 @@ draw_phase2(msg,card)
 	}
 
 	card.our_card = this.deck.deck[card_name];
+	card.nonces.push(card.our_card.nonce);
 
 	if (!this.prev_player)
 	{
 		// special case: if we're the first player, then we do not need
-		// to do anything other than record our nonce for later proof.  it is OURS!
-		card.nonces.push(card.our_card.nonce);
+		// to do anything.  it is OURS!
 		return this.receive_card(card, card.our_card.encrypted);
 	}
 
@@ -613,7 +757,7 @@ class Deck
 			let prev_name = BigInt(c.name);
 			let encrypted = BigInt(c.encrypted);
 
-			let nonce = utils.randomBigint(128); // bits
+			let nonce = utils.randomBigint(256); // bits
 			let full_card = nonce << 256n | prev_name; // new nonce || sha256 of old
 			let name = utils.sha256bigint(full_card, 64); // 2 * 32 bytes for each hash
 
@@ -651,7 +795,7 @@ class Deck
 /*
  * Generate a clean deck, in order, with new nonces.
  */
-function new_deck(size=52)
+function new_deck(size=default_deck_size)
 {
 	let deck = {}
 	for(let i = 0 ; i < size ; i++)
@@ -671,7 +815,7 @@ function new_deck(size=52)
 }
 
 
-function new_deck_validate(deck, deck_size=52)
+function new_deck_validate(deck, deck_size=default_deck_size)
 {
 	// validate that the cards are proper
 	const new_deck_size = deck.length;
