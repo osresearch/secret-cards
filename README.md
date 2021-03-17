@@ -249,3 +249,14 @@ Desired multiplayer features:
 * Fair dealing is preserved even if N-1 players are colluding
 * Collusion only shares information about colluding players' hands
 * No card passing between players due to commitments
+
+===
+
+Setup:
+
+```
+npm install
+node server.js
+```
+
+Then load `http://localhost:4423/` from your web browser
