@@ -63,7 +63,7 @@ constructor(channel)
 	this.channel.on('unseal', (status,msg) => this.unseal_msg(status,msg));
 }
 
-shuffle(num_cards=8)
+shuffle(num_cards=52)
 {
 	// publish a set of proposed cards,
 	// and an ordering of the players to
@@ -651,7 +651,7 @@ class Deck
 /*
  * Generate a clean deck, in order, with new nonces.
  */
-function new_deck(size=8)
+function new_deck(size=52)
 {
 	let deck = {}
 	for(let i = 0 ; i < size ; i++)
@@ -671,7 +671,7 @@ function new_deck(size=8)
 }
 
 
-function new_deck_validate(deck, deck_size=8)
+function new_deck_validate(deck, deck_size=52)
 {
 	// validate that the cards are proper
 	const new_deck_size = deck.length;
