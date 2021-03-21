@@ -112,14 +112,13 @@ draw_card(name=null)
 
 	// todo: validate that the card we eventually receive is the right one
 	this.drawn_card = name;
-	const card_name = utils.bigint2hex(name, 32);
 
-	console.log("DRAW INITIAL", card_name);
+	console.log("DRAW INITIAL", name);
 	this.channel.emit('draw', {
 		dest: this.player,
 		next: this.final_player,
-		final_name: card_name,
-		name: card_name,
+		final_name: name,
+		name: name,
 		nonce: null,
 	});
 }
@@ -343,7 +342,7 @@ draw_msg(status,msg)
 
 		console.log("DRAW:", make_words([msg.dest])[0], msg.final_name);
 		card.player = msg.dest;
-		card.known_name = BigInt(msg.final_name);
+		card.known_name = msg.final_name;
 	} else
 	if (!card.known_name)
 	{
@@ -351,8 +350,8 @@ draw_msg(status,msg)
 		return;
 	} else {
 		// this is in the chain, so validate the hash and update the deck
-		const nonce = BigInt(msg.nonce);
-		const name = BigInt(msg.name);
+		const nonce = BigInt("0x" + msg.nonce);
+		const name = BigInt("0x" + msg.name);
 		const full_card = nonce << 256n | name;
 		const next_name = utils.sha256bigint(full_card, 64);
 		if (next_name != card.known_name)
@@ -386,7 +385,7 @@ draw_msg(status,msg)
 		return;
 	}
 
-	const prev_name = utils.bigint2hex(my_card.prev_name, 32);
+	const prev_name = my_card.prev_name;
 	const my_nonce = utils.bigint2hex(my_card.nonce, 32);
 
 	console.log("DRAW: ", msg.final_name, my_nonce);
@@ -700,7 +699,7 @@ shuffle_msg(status,msg)
 				console.log("DUPLICATE CARD!", c);
 
 			this.final_deck[c.name] = {
-				final_name: BigInt(c.name),
+				final_name: c.name,
 				nonces: [],
 				name: null,
 				value: null,
@@ -760,18 +759,18 @@ class Deck
 		for(let c of prev_deck)
 		{
 			// un-stringify the name and encrypted value
-			let prev_name = BigInt(c.name);
-			let encrypted = BigInt(c.encrypted);
+			let prev_name = BigInt("0x" + c.name);
+			let encrypted = BigInt("0x" + c.encrypted);
 
 			let nonce = utils.randomBigint(256); // bits
 			let full_card = nonce << 256n | prev_name; // new nonce || sha256 of old
 			let name = utils.sha256bigint(full_card, 64); // 2 * 32 bytes for each hash
 
 			let card = {
-				prev_name: prev_name, // what the previous player called it
-				encrypted: encrypted, // encrypted with everyone's key up to me
+				prev_name: c.name, // what the previous player called it
+				encrypted: c.encrypted, // encrypted with everyone's key up to me
 				nonce: nonce,
-				name: name,
+				name: utils.bigint2hex(name, 32),
 			};
 
 			this.deck[utils.bigint2hex(name, 32)] = card;
@@ -788,8 +787,8 @@ class Deck
 			let c = this.deck[name];
 			let reencrypted = this.sra.encrypt(c.encrypted);
 			pub_deck.push({
-				name: utils.bigint2hex(c.name, 32),
-				encrypted: utils.bigint2hex(reencrypted, 80),
+				name: c.name,
+				encrypted: reencrypted,
 			});
 		}
 
@@ -836,8 +835,8 @@ function new_deck_validate(deck, deck_size=default_deck_size)
 	for(let i = 0 ; i < deck_size ; i++)
 	{
 		const card = deck[i];
-		const value = BigInt(card.encrypted);
-		const name = BigInt(card.name);
+		const value = BigInt("0x" + card.encrypted);
+		const name = BigInt("0x" + card.name);
 		const mask = (1n << 256n) - 1n;
 		const card_value = value & mask;
 		const hash_name = utils.sha256bigint(value, 64); // 2 * 32 bytes for each hash
