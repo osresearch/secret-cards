@@ -112,14 +112,13 @@ draw_card(name=null)
 
 	// todo: validate that the card we eventually receive is the right one
 	this.drawn_card = name;
-	const card_name = utils.bigint2hex(name, 32);
 
-	console.log("DRAW INITIAL", card_name);
+	console.log("DRAW INITIAL", name);
 	this.channel.emit('draw', {
 		dest: this.player,
 		next: this.final_player,
-		final_name: card_name,
-		name: card_name,
+		final_name: name,
+		name: name,
 		nonce: null,
 	});
 }
@@ -128,14 +127,16 @@ draw_card(name=null)
 reveal(card, dest_name=null)
 {
 	if (typeof(card) === "bigint")
+		card = card.toString(16);
+	if (typeof(card) === "string")
 	{
-		let card_hex = utils.bigint2hex(card, 32);
-		card = this.final_deck[card_hex];
-		if (!card)
+		if (!(card in this.final_deck))
 		{
-			console.log("REVEAL: unknown final card?", card_hex);
+			console.log("REVEAL: unknown final card?", card);
 			return;
 		}
+
+		card = this.final_deck[card];
 	}
 
 	// make sure we have the card
@@ -161,17 +162,18 @@ reveal(card, dest_name=null)
 		nonces = [];
 	} else {
 		// start at the next player to reveal a card we've drawn
+console.log(card)
 		dest = this.player;
 		next = this.prev_player;
 		prev_name = card.our_card.prev_name;
-		nonces = card.nonces.map(n => utils.bigint2hex(n, 32));
+		nonces = card.nonces;
 	}
 
 	this.channel.emit('reveal', {
 		dest: dest,
 		next: next,
-		final_name: utils.bigint2hex(card.final_name, 32),
-		name: utils.bigint2hex(prev_name, 32),
+		final_name: card.final_name,
+		name: prev_name,
 		nonces: nonces,
 	});
 }
@@ -199,16 +201,16 @@ reveal_msg(status,msg)
 	// over the top card on the deck without drawing it.
 
 	// validate the chain of nonces back to the final card
-	let name = BigInt(msg.name);
+	let name = BigInt("0x" + msg.name);
 
 	for(let nonce_string of msg.nonces.slice().reverse())
 	{
-		let nonce = BigInt(nonce_string);
+		let nonce = BigInt("0x" + nonce_string);
 		let new_name = nonce << 256n | name;
 		name = utils.sha256bigint(new_name, 64);
 	}
 
-	name = utils.bigint2hex(name, 32);
+	name = name.toString(16);
 
 	if (name != msg.final_name)
 	{
@@ -236,7 +238,7 @@ reveal_msg(status,msg)
 			card.player = msg.dest;
 
 		card.orig_card = orig_card;
-		card.value = BigInt(orig_card.encrypted);
+		card.value = orig_card.encrypted;
 		console.log("VALIDATED", dest_name, card.value);
 	}
 
@@ -254,13 +256,13 @@ reveal_msg(status,msg)
 	// todo: validate that the chain of nonces matches our chain
 	// that we have recorded from previous announcements.
 	//card.nonces = msg.nonces;
-	msg.nonces.push(utils.bigint2hex(my_card.nonce, 32));
+	msg.nonces.push(my_card.nonce.toString(16));
 
 	this.channel.emit('reveal', {
 		dest: msg.dest,
 		next: this.prev_player,
 		final_name: msg.final_name,
-		name: utils.bigint2hex(my_card.prev_name, 32),
+		name: my_card.prev_name,
 		nonces: msg.nonces,
 	});
 }
@@ -282,7 +284,7 @@ hands()
 			hands[player] = [];
 
 		hands[player].push({
-			value: card.value ? card.value & 0xFFFFFFFFFFFFn : null,
+			value: card.value ? BigInt("0x" + card.value) & 0xFFFFFFFFFFFFn : null,
 			name: hash,
 		});
 	}
@@ -297,8 +299,8 @@ hands()
  */
 receive_card(card, value)
 {
-	const card_hash = utils.sha256bigint(value, 64);
-	const card_name = utils.bigint2hex(card_hash, 32);
+	const card_hash = utils.sha256bigint(BigInt("0x" + value), 64);
+	const card_name = card_hash.toString(16);
 
 	if (!(card_name in this.initial_deck))
 	{
@@ -343,7 +345,7 @@ draw_msg(status,msg)
 
 		console.log("DRAW:", make_words([msg.dest])[0], msg.final_name);
 		card.player = msg.dest;
-		card.known_name = BigInt(msg.final_name);
+		card.known_name = msg.final_name;
 	} else
 	if (!card.known_name)
 	{
@@ -351,17 +353,17 @@ draw_msg(status,msg)
 		return;
 	} else {
 		// this is in the chain, so validate the hash and update the deck
-		const nonce = BigInt(msg.nonce);
-		const name = BigInt(msg.name);
+		const nonce = BigInt("0x" + msg.nonce);
+		const name = BigInt("0x" + msg.name);
 		const full_card = nonce << 256n | name;
-		const next_name = utils.sha256bigint(full_card, 64);
+		const next_name = utils.sha256bigint(full_card, 64).toString(16);
 		if (next_name != card.known_name)
 		{
 			console.log("DRAW: BAD NONCE", next_name, card.known_name, card, msg);
 			return;
 		}
-		card.known_name = name;
-		card.nonces.push(nonce);
+		card.known_name = msg.name;
+		card.nonces.push(nonce.toString(16));
 		console.log("DRAW: nonces", msg.final_name, card.nonces);
 	}
 
@@ -386,8 +388,8 @@ draw_msg(status,msg)
 		return;
 	}
 
-	const prev_name = utils.bigint2hex(my_card.prev_name, 32);
-	const my_nonce = utils.bigint2hex(my_card.nonce, 32);
+	const prev_name = my_card.prev_name;
+	const my_nonce = my_card.nonce;
 
 	console.log("DRAW: ", msg.final_name, my_nonce);
 
@@ -408,7 +410,7 @@ draw_phase2(msg,card)
 	// this is destined for us, switch to phase 2 of the draw
 
 	// we should be able to identify it in our deck
-	let card_name = utils.bigint2hex(card.known_name, 32);
+	let card_name = card.known_name;
 	if (!(card_name in this.deck.deck))
 	{
 		console.log("card not in our deck?", card_name, card);
@@ -440,7 +442,7 @@ draw_phase2(msg,card)
 		dest: msg.dest,
 		next: this.prev_player,
 		final_name: msg.final_name,
-		encrypted: utils.bigint2hex(reencrypted, 80),
+		encrypted: reencrypted.toString(16),
 	});
 }
 
@@ -471,8 +473,7 @@ wrap_msg(status,msg)
 		return;
 	}
 
-	let encrypted = BigInt(msg.encrypted);
-	card.wrapped[status.peer.id] = encrypted;
+	card.wrapped[status.peer.id] = msg.encrypted;
 
 	if (msg.next != this.player)
 		return;
@@ -483,13 +484,13 @@ wrap_msg(status,msg)
 
 	card.temp_key = sra.SRA();
 
-	let reencrypted = card.temp_key.encrypt(encrypted);
+	let reencrypted = card.temp_key.encrypt(msg.encrypted);
 
 	this.channel.emit('wrap', {
 		dest: msg.dest,
 		next: this.prev_player,
 		final_name: msg.final_name,
-		encrypted: utils.bigint2hex(reencrypted, 80),
+		encrypted: reencrypted,
 	});
 
 	if (this.prev_player)
@@ -504,7 +505,7 @@ wrap_msg(status,msg)
 		dest: msg.dest,
 		next: this.next_player,
 		final_name: msg.final_name,
-		encrypted: utils.bigint2hex(unwrapped, 80),
+		encrypted: unwrapped,
 	});
 }
 
@@ -536,8 +537,7 @@ unwrap_msg(status,msg)
 	}
 
 	// store the latest version of the unlocked message
-	let encrypted = BigInt(msg.encrypted);
-	card.encrypted = encrypted;
+	card.encrypted = msg.encrypted;
 
 	if (msg.next != this.player)
 		return;
@@ -573,7 +573,7 @@ unwrap_msg(status,msg)
 			dest: msg.dest,
 			next: this.next_player,
 			final_name: msg.final_name,
-			encrypted: utils.bigint2hex(decrypted, 80),
+			encrypted: decrypted,
 		});
 	} else {
 		// if we're the final destination for this wrapped card,
@@ -588,7 +588,7 @@ unwrap_msg(status,msg)
 			dest: msg.dest,
 			next: this.prev_player,
 			final_name: msg.final_name,
-			key: utils.bigint2hex(card.temp_key.d, 80),
+			key: card.temp_key.d.toString(16),
 		});
 	}
 }
@@ -620,7 +620,7 @@ unseal_msg(status,msg)
 
 	// validate that the wrapped version decrypts with this key
 	// so that they did not launch a blind-signing attack
-	let d = BigInt(msg.key);
+	let d = BigInt("0x" + msg.key);
 /*
 	console.log("unsealing", card);
 	let m1 = BigInt(card.wrapped[status.peer.id]);
@@ -638,7 +638,6 @@ unseal_msg(status,msg)
 		card.unwrapped = card.encrypted;
 
 	card.unwrapped = sra.modExp(card.unwrapped, d, this.deck.sra.p);
-	let hex = utils.bigint2hex(card.unwrapped, 80);
 
 	// this was the final value, so the card should be good
 	if (msg.next == null && msg.dest == this.player)
@@ -661,7 +660,7 @@ unseal_msg(status,msg)
 	this.channel.emit('unseal', {
 		final_name: msg.final_name,
 		dest: msg.dest,
-		key: utils.bigint2hex(card.temp_key.d, 80),
+		key: card.temp_key.d.toString(16),
 		next: this.prev_player,
 	});
 }
@@ -700,7 +699,7 @@ shuffle_msg(status,msg)
 				console.log("DUPLICATE CARD!", c);
 
 			this.final_deck[c.name] = {
-				final_name: BigInt(c.name),
+				final_name: c.name,
 				nonces: [],
 				name: null,
 				value: null,
@@ -760,21 +759,22 @@ class Deck
 		for(let c of prev_deck)
 		{
 			// un-stringify the name and encrypted value
-			let prev_name = BigInt(c.name);
-			let encrypted = BigInt(c.encrypted);
+			let prev_name = BigInt("0x" + c.name);
+			let encrypted = BigInt("0x" + c.encrypted);
 
 			let nonce = utils.randomBigint(256); // bits
 			let full_card = nonce << 256n | prev_name; // new nonce || sha256 of old
 			let name = utils.sha256bigint(full_card, 64); // 2 * 32 bytes for each hash
 
+			let name_hex = name.toString(16);
 			let card = {
-				prev_name: prev_name, // what the previous player called it
-				encrypted: encrypted, // encrypted with everyone's key up to me
-				nonce: nonce,
-				name: name,
+				prev_name: c.name, // what the previous player called it
+				encrypted: c.encrypted, // encrypted with everyone's key up to me
+				nonce: nonce.toString(16),
+				name: name_hex,
 			};
 
-			this.deck[utils.bigint2hex(name, 32)] = card;
+			this.deck[name_hex] = card;
 		}
 	}
 
@@ -788,8 +788,8 @@ class Deck
 			let c = this.deck[name];
 			let reencrypted = this.sra.encrypt(c.encrypted);
 			pub_deck.push({
-				name: utils.bigint2hex(c.name, 32),
-				encrypted: utils.bigint2hex(reencrypted, 80),
+				name: c.name,
+				encrypted: reencrypted,
 			});
 		}
 
@@ -809,11 +809,11 @@ function new_deck(size=default_deck_size)
 		let nonce = utils.randomBigint(256); // bits
 		let full_card = nonce << 256n | BigInt(i);
 		let name = utils.sha256bigint(full_card, 64); // 2 * 32 bytes for each hash
-		let hex_name = utils.bigint2hex(name, 32);
+		let name_hex = name.toString(16);
 
-		deck[hex_name] = {
-			name: hex_name,
-			encrypted: utils.bigint2hex(full_card,64),
+		deck[name_hex] = {
+			name: name_hex,
+			encrypted: full_card.toString(16),
 		};
 	}
 
@@ -836,8 +836,8 @@ function new_deck_validate(deck, deck_size=default_deck_size)
 	for(let i = 0 ; i < deck_size ; i++)
 	{
 		const card = deck[i];
-		const value = BigInt(card.encrypted);
-		const name = BigInt(card.name);
+		const value = BigInt("0x" + card.encrypted);
+		const name = BigInt("0x" + card.name);
 		const mask = (1n << 256n) - 1n;
 		const card_value = value & mask;
 		const hash_name = utils.sha256bigint(value, 64); // 2 * 32 bytes for each hash

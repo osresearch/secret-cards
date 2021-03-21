@@ -14,7 +14,7 @@
 // which serves as a nothing up-my-sleeves number to provide similar
 // security to RSA2048.
 //const sra_default_prime = 2n ** 1279n - 1n;
-const sra_default_prime = 2n ** 607n - 1n;
+const sra_default_prime = 2n ** 521n - 1n;
 
 /*
  * Compute a^e % n with big integers
@@ -23,6 +23,9 @@ const sra_default_prime = 2n ** 607n - 1n;
  */
 function modExp(a, e, n)
 {
+	if (typeof(a) === "string")
+		a = BigInt("0x" + a);
+
 	let r = 1n;
 	let x = a % n;
 
@@ -37,7 +40,7 @@ function modExp(a, e, n)
 		x = (x * x) % n;
 	}
 
-	return r;
+	return r.toString(16);
 }
 
 
@@ -47,9 +50,8 @@ class SRA
 	{
 		this.p = p ? p : sra_default_prime;
 
-		let phi_p = this.p - 1n;
-		let dec_digits = (""+ phi_p).length;
-		let bits = 600; //dec_digits * 3;
+		const phi_p = this.p - 1n;
+		const bits = 256; // fast encryption, slower decryption
 		
 		while(true)
 		{
@@ -109,10 +111,7 @@ class SRA
 	 */
 	encrypt(m)
 	{
-		let mi = typeof(m) == "bigint" ? m : utils.array2bigint(m);
-		let ci = modExp(mi, this.e, this.p);
-		return ci;
-		//return bigint2array(ci);
+		return modExp(m, this.e, this.p);
 	}
 
 	/*
@@ -120,9 +119,7 @@ class SRA
 	 */
 	decrypt(c)
 	{
-		//let ci = array2bigint(c);
-		let mi = modExp(c, this.d, this.p);
-		return mi;
+		return modExp(c, this.d, this.p);
 	}
 }
 
