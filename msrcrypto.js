@@ -9272,8 +9272,6 @@ var msrCryptoVersion = "1.6.2";
 
             url: scriptUrl,
 
-            cryptoMath: cryptoMath,
-
             version: msrCryptoVersion,
 
             useWebWorkers: function(useWebWorkers) {

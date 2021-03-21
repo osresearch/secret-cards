@@ -5,104 +5,58 @@
  * any order.
  *
  * This needs the utils.js module for bigint to stuff.
- * TODO: switch to using the msrcrypto library instead
  */
 
 (function (exports) {
 'use strict'
 
-const cryptoMath = msrCrypto.cryptoMath;
+// default prime is the 15th Mersenne prime, which has 1279 bits and
+// which serves as a nothing up-my-sleeves number to provide similar
+// security to RSA2048.
+//const sra_default_prime = 2n ** 1279n - 1n;
+const sra_default_prime = 2n ** 607n - 1n;
 
-function bigint2msr(x)
+/*
+ * Compute a^e % n with big integers
+ * using the modular exponentiation so that it can be done
+ * in (non-constant) log2 time.
+ */
+function modExp(a, e, n)
 {
-	let r = [];
-	while(x)
+	let r = 1n;
+	let x = a % n;
+
+	while (e != 0n)
 	{
-		const v = x & BigInt(cryptoMath.DIGIT_MASK);
-		x >>= BigInt(cryptoMath.DIGIT_BITS);
-		r.push(Number(v));
+		//if (e % 2n)
+		if (e & 1n)
+			r = (r * x) % n;
+
+		//e /= 2n;
+		e >>= 1n;
+		x = (x * x) % n;
 	}
 
 	return r;
 }
 
-    function toBytes(digits) {
-
-        var bytes = cryptoMath.digitsToBytes(digits);
-
-        // Add leading zeros until the message is the proper length.
-        utils.padFront(bytes, 0, modulusLength);
-
-        return bytes;
-    }
-
-    function modExp(dataBytes, expBytes, modulusBytes) {
-        /// <returns type="Array">Result in a digit array.</returns>
-        var exponent = cryptoMath.bytesToDigits(expBytes);
-
-        var group = cryptoMath.IntegerGroup(modulusBytes);
-        var base = group.createElementFromBytes(dataBytes);
-        var result = group.modexp(base, exponent);
-
-        // var modulus = cryptoMath.bytesToDigits(modulusBytes);
-        // var exponent = cryptoMath.bytesToDigits(expBytes);
-        // var base = cryptoMath.bytesToDigits(dataBytes);
-
-        // var result = cryptoMath.modExp(base, exponent, modulus);
-
-        return result.m_digits;
-    }
-
-    function decryptModExp(cipherBytes) {
-
-        var resultElement = modExp(cipherBytes, keyStruct.d, keyStruct.n);
-
-        return toBytes(resultElement);
-    }
-
-// default prime is the 15th Mersenne prime, which has 1279 bits and
-// which serves as a nothing up-my-sleeves number to provide similar
-// security to RSA2048.
-//const sra_default_prime = 2n ** 1279n - 1n;
-//const sra_default_prime_hex = "7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"; // 2n ** 607n - 1n;
-//const sra_default_prime = cryptoMath.stringToDigits(sra_default_prime_hex, 16);
-const sra_default_prime = 2n ** 607n - 1n;
-const sra_group = cryptoMath.IntegerGroup(cryptoMath.digitsToBytes(bigint2msr(sra_default_prime)));
-
-/*
- * Compute a^e % n with either hex strings or msrCrypto digits.
- * Returns a hex string
- *
- * if n is specified it must be a cryptoMath.IntegerGroup()
- */
-function modExp(a, e, n=sra_group)
-{
-	if (typeof(a) === "string")
-		a = cryptoMath.stringToDigits(a, 16);
-	if (typeof(e) === "string")
-		e = cryptoMath.stringToDigits(e, 16);
-
-	let a_element = n.createElementFromDigits(a);
-	let s = n.modexp(n.createElementFromDigits(a), e);
-
-	// convert the result back to a hex string
-	return cryptoMath.digitsToString(s.m_digits, 16);
-}
 
 class SRA
 {
-	constructor()
+	constructor(p=0n)
 	{
-		let bits = 600;
-		let phi_p = sra_default_prime - 1n;
-		//cryptoMath.subtract(this.p, [1], phi_p);
+		this.p = p ? p : sra_default_prime;
+
+		let phi_p = this.p - 1n;
+		let dec_digits = (""+ phi_p).length;
+		let bits = 600; //dec_digits * 3;
 		
 		while(true)
 		{
 			// choose a random encryption key and check to see if it
 			// is relatively prime to the modulus.
 			let k = utils.randomBigint(bits);
-			console.log("trying", k);
+			//console.log("SRA: trying", k);
 
 			// gcd(k,phi_p) == 1 means that they are relatively prime
 			let g = this.egcd(k, phi_p);
@@ -118,10 +72,6 @@ class SRA
 			this.d = inv;
 			break;
 		} 
-
-		// convert things to the msrcrypto library format
-		this.e = bigint2msr(this.e);
-		this.d = bigint2msr(this.d);
 	}
 
 	/*
@@ -159,7 +109,10 @@ class SRA
 	 */
 	encrypt(m)
 	{
-		return modExp(m, this.e);
+		let mi = typeof(m) == "bigint" ? m : utils.array2bigint(m);
+		let ci = modExp(mi, this.e, this.p);
+		return ci;
+		//return bigint2array(ci);
 	}
 
 	/*
@@ -167,11 +120,13 @@ class SRA
 	 */
 	decrypt(c)
 	{
-		return modExp(c, this.d);
+		//let ci = array2bigint(c);
+		let mi = modExp(c, this.d, this.p);
+		return mi;
 	}
 }
 
-exports.SRA = () => new SRA();
+exports.SRA = (p=0n) => new SRA(p);
 exports.modExp = modExp;
 
 })(typeof exports === 'undefined' ? this['sra']={} : exports);

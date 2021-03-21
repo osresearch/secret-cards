@@ -55,7 +55,7 @@ function bigint2string(m,l)
 function bigint2hex(m,l)
 {
 	let r = bigint2bytes(m, l);
-	return r.map(c => ('00' + c.toString(16)).slice(-2) ).join('');
+	return "0x" + r.map(c => ('00' + c.toString(16)).slice(-2) ).join('');
 }
 
 /*
