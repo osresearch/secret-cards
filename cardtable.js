@@ -300,6 +300,7 @@ draw_card(index=null)
 
 	this.channel.emit('draw', {
 		index: index,
+		dest: this.player,
 	});
 }
 
@@ -307,8 +308,8 @@ draw_msg(status,msg)
 {
 	console.log("DRAW", status.peer.name, msg.index);
 
-	// ignore draw messages from ourselves (so that we don't reveal our key)
-	if (status.peer.id == this.player)
+	// ignore draw messages to ourselves (so that we don't reveal our key)
+	if (msg.dest == this.player)
 		return;
 
 	let card = this.deck[msg.index];
@@ -318,8 +319,8 @@ draw_msg(status,msg)
 		return;
 	}
 
-	// assign this card to the other player
-	card.player = status.peer.id;
+	// assign this card to the other player (or table or stack, etc)
+	card.player = msg.dest;
 
 	// and reveal our per-card key for this one
 	this.channel.emit('decrypt', {
