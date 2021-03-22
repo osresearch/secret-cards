@@ -45,7 +45,7 @@ io.on('connection', (socket) => {
 
 	// broadcast all incoming messages from any peer.
 	// ignore the signature; that is for others to verify
-	for(let topic of ["chat", "shuffle", "draw", "wrap", "unwrap", "unseal", "reveal"])
+	for(let topic of ["chat", "shuffle", "draw", "encrypt", "decrypt", "reveal"])
 	{
 		socket.on(topic, (msg) => {
 			console.log(topic + ":", msg.msg);
