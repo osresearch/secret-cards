@@ -25,6 +25,8 @@ function modExp(a, e, n)
 {
 	if (typeof(a) === "string")
 		a = BigInt("0x" + a);
+	if (typeof(e) === "string")
+		e = BigInt("0x" + e);
 
 	let r = 1n;
 	let x = a % n;
