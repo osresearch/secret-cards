@@ -9,6 +9,15 @@ let messages = document.getElementById('messages');
 let form = document.getElementById('form');
 let input = document.getElementById('input');
 
+// the Unicode cards to display
+const card_default = "🂠";
+const card_faces =
+"🂡🂢🂣🂤🂥🂦🂧🂨🂩🂪🂫🂭🂮"+
+"🂱🂲🂳🂴🂵🂶🂷🂸🂹🂺🂻🂽🂾"+
+"🃁🃂🃃🃄🃅🃆🃇🃈🃉🃊🃋🃍🃎"+
+"🃑🃒🃓🃔🃕🃖🃗🃘🃙🃚🃛🃝🃞";
+const num_cards = card_faces.length/2; // two-byte characters
+
 form.addEventListener('submit', (e) => {
 	e.preventDefault();
 	if (!input.value)
@@ -62,9 +71,13 @@ channel.peer_new = (peer) =>
 	else
 		id_name.setAttribute("class", "peer-name");
 
+	let cards = document.createElement('span');
+	cards.setAttribute("id", "player-cards-" + peer.id);
 
 	it.appendChild(seq);
 	it.appendChild(id_name);
+	it.appendChild(cards);
+
 	peer_list.appendChild(it);
 
 	let peers = document.getElementById('peer-count');
@@ -98,4 +111,39 @@ channel.update = (dest,status,msg) =>
 		seq.setAttribute("cheater", true);
 
 	seq.textContent = msg.seq + ' ';
+}
+
+
+// called when a card is moved
+cards.card_move = (card) =>
+{
+	let old = document.getElementById('card-' + card.index);
+	if (old)
+		old.remove();
+
+	let it = document.createElement('span');
+	it.setAttribute("id", "card-" + card.index);
+	it.setAttribute("class", "card");
+	it.setAttribute("owner", card.player);
+	it.textContent = card_default;
+
+	let player = document.getElementById("player-cards-" + card.player);
+	player.appendChild(it);
+
+	return it;
+}
+
+// called when a new card is learned
+cards.card_value = (card) =>
+{
+	let it = document.getElementById("card-" + card.index);
+	if (!it)
+		it = cards.card_move(card);
+
+	let value = Number(card.value);
+	let suite = Math.floor(value / 13);
+
+	it.textContent = card_faces.substr(value*2, 2);
+	it.setAttribute("value", value);
+	it.setAttribute('class', 'suite-' + suite);
 }

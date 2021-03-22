@@ -325,6 +325,7 @@ draw_msg(status,msg)
 
 	// assign this card to the other player (or table or stack, etc)
 	card.player = msg.dest;
+	this.card_move(card);
 
 	// and reveal our per-card key for this one, if we are not the destination
 	if (msg.dest != this.player)
@@ -367,6 +368,7 @@ decrypt_msg(status,msg)
 	let dest = (card.player.substr(0,2) == "0x" ? make_words(card.player) : card.player);
 		
 	console.log("CARD", dest, card.value);
+	this.card_value(card);
 }
 
 reveal(card)
@@ -388,6 +390,11 @@ reveal(card)
 		key: card.sra.d.toString(16),
 	});
 }
+
+
+// callbacks for the gui
+card_value(card) {}
+card_move(card) {}
 
 }
 

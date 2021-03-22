@@ -3,7 +3,12 @@
   <head>
     <title>secret.cards</title>
     <style>
-      body { margin: 0; padding-bottom: 3rem; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: #222; color: #888; }
+      body { margin: 0;
+	 padding-bottom: 3rem;
+	 font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+	 background: #eee;
+	 color: #222;
+	 }
 
       #form { background: rgba(0, 0, 0, 0.15); padding: 0.25rem; position: fixed; bottom: 0; left: 0; right: 0; display: flex; height: 3rem; box-sizing: border-box; backdrop-filter: blur(10px); }
       #input { border: none; padding: 0 1rem; flex-grow: 1; border-radius: 2rem; margin: 0.25rem; }
@@ -15,8 +20,17 @@
       #messages > li:nth-child(odd) { background: #efefef; }
 
 	.peer-sequence { color: #888; }
-	.peer-name { color: #aaa; }
-	.player-name { color: #aaf; }
+	.peer-name { color: #222; }
+	.player-name { color: #252; }
+
+.suite-0, .suite-1, .suite-2, .suite-3, .card {
+	position: relative;
+	font-size: 32px;
+}
+
+.suite-1, .suite-2 { color: red; }
+.suite-0, .suite-3 { color: blue; }
+
     </style>
   </head>
   <body>
