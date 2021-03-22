@@ -85,14 +85,20 @@ class SecureChannel
 		});
 	}
 
-	// register a callback for a socket event, with the vai
+	// register a callback for a socket event, with the validation
+	// of messages built in.  should be able to request only valid
+	// messages
 	on(dest, callback)
 	{
 		this.socket.on(dest, (msg) =>
 			this.validate_message(msg).then((status) => {
 				if (!status.valid)
 					console.log("ERRROR", status, msg);
-				callback(status,msg.msg)
+				else
+					callback(status,msg.msg);
+
+				// update for all messages so that the gui can keep track
+				this.update(dest, status, msg);
 			})
 		);
 	}
@@ -196,7 +202,6 @@ class SecureChannel
 	// todo: detect a peer leaving during game play
 	update_peers(new_peer_list)
 	{
-		let peer_list = document.getElementById('peers');
 		console.log(new_peer_list);
 
 		let new_peers = {};
@@ -218,9 +223,10 @@ class SecureChannel
 				continue;
 
 			// todo: cancel a game in progress
-			console.log('disconnect', this.peers[id].name);
+			const peer = this.peers[id];
+			console.log('disconnect', peer.name);
 			delete this.peers[id];
-			//removeElement("peer-"+id);
+			this.peer_remove(peer);
 		}
 
 		// add in any new peer id's
@@ -235,6 +241,7 @@ class SecureChannel
 			// todo: add them in observer mode
 			// todo: validate their key parameters
 			this.peers[id] = peer;
+
 			window.crypto.subtle.importKey(
 				'jwk',
 				peer,
@@ -244,34 +251,18 @@ class SecureChannel
 			).then((peer_pub) => {
 				peer.key = peer_pub;
 				console.log('register', peer.name);
+				this.peer_new(peer);
 			});
 
-/*
-			// add them to the peer list
-			let it = document.createElement('li');
-			it.setAttribute("id", "peer-" + id);
-
-			let seq = document.createElement('span');
-			seq.setAttribute("class", "peer-sequence");
-			seq.setAttribute("id", "peer-sequence-" + id);
-			seq.textContent = '--';
-			let id_name = document.createElement('span');
-			id_name.setAttribute("class", "peer-name");
-			id_name.textContent = id;
-
-			it.appendChild(seq);
-			it.appendChild(id_name);
-			peer_list.appendChild(it);
-*/
 		}
 
 		console.log("PEERS:", Object.values(this.peers).map(p => p.name));
-
-/*
-		// update the total peer count
-		let counter = document.getElementById('peerCount');
-		counter.textContent = Object.keys(peers).length;
-*/
 	}
+
+	// virtual functions for the GUI
+	peer_new(peer) {}
+	peer_remove(peer) {}
+	msg_error(status,raw_msg) {}
+	update(dest,status,raw_msg) {}
 }
 
