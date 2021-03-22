@@ -76,11 +76,9 @@ constructor(channel)
 	this.commitments = {};
 
 	this.channel.on('shuffle', (status,msg) => this.shuffle_msg(status,msg));
-	this.channel.on('unseal', (status,msg) => this.unseal_msg(status,msg));
-	//this.channel.on('lock', (status,msg) => this.lock_msg(status,msg));
-	//this.channel.on('draw', (status,msg) => this.draw_msg(status,msg));
-	//this.channel.on('unlock', (status,msg) => this.unlock_msg(status,msg));
-	//this.channel.on('reveal', (status,msg) => this.reveal_msg(status,msg));
+	this.channel.on('encrypt', (status,msg) => this.encrypt_msg(status,msg));
+	this.channel.on('draw', (status,msg) => this.draw_msg(status,msg));
+	this.channel.on('decrypt', (status,msg) => this.decrypt_msg(status,msg));
 }
 
 shuffle(num_cards=default_deck_size)
@@ -89,7 +87,7 @@ shuffle(num_cards=default_deck_size)
 	// and an ordering of the players to
 	// complete the shuffle
 	// todo: validate that the initial deck we get back is the one we sent
-	const initial_deck = new_deck(); // not encrypted, everyone validates it
+	const initial_deck = new_deck(num_cards); // not encrypted, everyone validates it
 	this.order = Object.keys(this.channel.peers);
 	utils.shuffle(this.order)
 
@@ -107,11 +105,12 @@ shuffle(num_cards=default_deck_size)
 
 shuffle_msg(status, msg)
 {
-	console.log("SHUFFLE", status.peer.name);
 	if (msg.pass == 0)
 	{
+		console.log("NEW DECK", status.peer.name, msg.deck.length);
+
 		// this is the initial, unencrypted deck
-		if (!validate_deck(msg.deck))
+		if (!validate_deck(msg.deck, msg.deck.length))
 		{
 			console.log("bad deck?");
 			return;
@@ -120,28 +119,57 @@ shuffle_msg(status, msg)
 		// hack to set our name
 		this.player = this.channel.public_name;
 	
-		// store the deck of cleartext cards
+		// store the deck of clear cards
+		this.ready = false;
 		this.cards = msg.deck;
+		this.deck_size = msg.deck.length;
 
-		// reset our player commitments for the final order
-		for(let player of msg.order)
-			this.commitments[player] = [];
+		// setup our encrypted deck bookkeeping
+		// final shuffled order and hash commitments will
+		// arrive in later messages
+		this.deck = [];
+		for(let i = 0 ; i < this.deck_size ; i++)
+		{
+			this.deck[i] = {
+				index: i,
+				value: null,
+				sra: sra.SRA(),
+				player: null,
+				hashes: {},
+				encrypted: null,
+				encrypts: 0,
+			};
+		}
+
+	} else {
+		console.log("SHUFFLE", status.peer.name);
+		if (msg.deck.length != this.deck_size)
+		{
+			console.log("BAD DECK SIZE", status.peer.name, msg);
+			return;
+		}
 	}
 
 //console.log(this.player, msg.order, msg.pass);
+	// if all the players have shuffled and every card is now encrypted
+	// with their per-deck key.  start the unsealing process.
+	if (msg.pass == msg.order.length)
+	{
+		if (msg.order[0] == this.player)
+			return this.encrypt_msg(status, {
+				pass: 0,
+				order: msg.order,
+				deck: msg.deck,
+			});
+		return;
+	}
+
 	if (msg.order[msg.pass] != this.player)
 		return;
 
 	// it is our turn to shuffle!
 	utils.shuffle(msg.deck);
 
-	// we're the last player, so switch to a per-card SRA and start
-	// the unsealing process
-	if (msg.pass == msg.order.length - 1)
-	{
-		msg.pass++;
-		return this.unseal_msg(status, msg);
-	}
 
 	// if we're not the last player, encrypt with a per-deck SRA
 	// and output the shuffled deck.
@@ -155,66 +183,179 @@ shuffle_msg(status, msg)
 }
 
 
-unseal_msg(status, msg)
+encrypt_msg(status, msg)
 {
-	if (msg.pass < msg.order.length)
+	if (msg.pass != 0)
 	{
+		if (msg.deck.length != this.deck_size || msg.hashes.length != this.deck_size)
+		{
+			console.log("BAD DECK SIZE", status.peer.name, msg);
+			return;
+		}
+
 		console.log("UNSEAL", status.peer.name, msg);
 
 		const player = status.peer.id;
 
-		if (msg.order[msg.pass] != player)
+		if (msg.order[msg.pass-1] != player)
 		{
 			console.log("WRONG PLAYER", status.peer.id, msg);
 			return;
 		}
 
-		// store everyone else's commitments
-		if (player != this.player)
-			this.commitments[player] = msg.hashes;
+		// store everyone's commitments in the deck order
+		for(let i = 0 ; i < msg.hashes.length ; i++)
+		{
+			let card = this.deck[i];
+			card.hashes[player] = msg.hashes[i];
+			card.encrypts++;
+		}
 	}
 
-	if (msg.pass == 0)
+	if (msg.pass == msg.order.length)
 	{
 		// everyone has shuffled, unsealed, and commited to
 		// their hashes.  store the final deck, which is now
 		// encrypted only with everyone's per-card SRA keys.
+		// todo: verify that everyone has had both passes
+		// todo: cut-n-choose protocol
 		this.ready = 1;
-		this.deck = msg.deck;
+
+		for(let i = 0 ; i < msg.deck.length ; i++)
+		{
+			let card = this.deck[i];
+			card.encrypted = msg.deck[i];
+			card.player = null;
+		}
+
+		console.log("SHUFFLE COMPLETE", this.deck);
 		return;
 	}
 
-	if (msg.order[msg.pass-1] != this.player)
+	if (msg.order[msg.pass] != this.player)
 		return;
 
-	// my turn to unseal and commit to this shuffle
+	// my turn to decrypt each card with my per-deck key,
+	// re-encrypt each card with my per-card key,
+	// and commit to the per-card key.
 	// (in the same order as the final ordering)
 	let new_deck = [];
 	let hashes = [];
-	this.keys = [];
 	
-	for(let card of msg.deck)
+	for(let i = 0 ; i < this.deck_size ; i++)
 	{
-		let s = sra.SRA();
-		let hash = sha256hex(s.d.toString(16));
+		let card = this.deck[i];
+		let hash = sha256hex(card.sra.d.toString(16));
 
-		new_deck.push(s.encrypt(card));
-		hashes.push(hash);
-		this.keys.push(s.d);
+		card.hashes[this.player] = hash;
+		hashes[i] = hash;
+		new_deck[i] = card.sra.encrypt(this.sra.decrypt(msg.deck[i]));
 	}
 
-	this.channel.emit('unseal', {
-		pass: msg.pass - 1,
+	this.channel.emit('encrypt', {
+		pass: msg.pass + 1,
 		order: msg.order,
 		hashes: hashes,
 		deck: new_deck,
 	});
 }
 
+draw_card(index=null)
+{
+	if (!this.ready)
+	{
+		console.log("not ready to deal!");
+		return;
+	}
 
+	let card;
+	if (index === null)
+	{
+		for(let i = 0 ; i < this.deck_size ; i++)
+		{
+			if (this.deck[i].player != null)
+				continue;
+			index = i;
+			card = this.deck[i];
+			break;
+		}
+	} else {
+		card = this.deck[i];
+	}
 
+	if (!card)
+	{
+		console.log("NO MORE CARDS!");
+		return;
+	}
+
+	if (card.player)
+		console.log("attempting to play an already drawn card", card);
+
+	card.player = this.player;
+
+	// remove our own encryption key
+	card.encrypted = card.sra.decrypt(card.encrypted);
+	card.encrypts--;
+
+	this.channel.emit('draw', {
+		index: index,
+	});
 }
 
+draw_msg(status,msg)
+{
+	console.log("DRAW", status.peer.name, msg.index);
+
+	// ignore draw messages from ourselves (so that we don't reveal our key)
+	if (status.peer.id == this.player)
+		return;
+
+	let card = this.deck[msg.index];
+	if (card.player)
+	{
+		console.log("already drawn!", card);
+		return;
+	}
+
+	// assign this card to the other player
+	card.player = status.peer.id;
+
+	// and reveal our per-card key for this one
+	this.channel.emit('decrypt', {
+		index: msg.index,
+		key: card.sra.d.toString(16),
+	});
+}
+
+decrypt_msg(status,msg)
+{
+	console.log("DECRYPT", status.peer.name, msg.index);
+	let card = this.deck[msg.index];
+
+	// validate that the hash matches the one from this peer
+	let hash = sha256hex(msg.key);
+	if (hash != card.hashes[status.peer.id])
+	{
+		console.log("BAD HASH", status.peer.name, hash, card);
+		return;
+	}
+
+	// apply this other player's key to the encrypted value
+	card.encrypted = sra.modExp(card.encrypted, msg.key, card.sra.p);
+
+	// remove it from the hash to avoid double decryption
+	card.hashes[status.peer.id] = "USED";
+
+	if (--card.encrypts > 0)
+		return;
+
+	// final version of the card is ours!
+	// todo: verify that this exists in the initial deck
+	console.log("CARD", card);
+}
+
+}
 
 
 /*
