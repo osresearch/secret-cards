@@ -48,7 +48,7 @@ io.on('connection', (socket) => {
 	for(let topic of ["chat", "shuffle", "draw", "encrypt", "decrypt", "reveal"])
 	{
 		socket.on(topic, (msg) => {
-			console.log(topic + ":", msg.msg);
+			console.log(socket.name + ": " + topic + "=", msg.msg);
 			io.emit(topic, msg);
 		});
 	}
@@ -82,6 +82,7 @@ function peer_register(socket, jwk)
 		peer_disconnect(socket, false);
 
 	socket.key = jwk;
+	socket.name = name;
 	peers[name] = jwk;
 	console.log('register', name);
 
