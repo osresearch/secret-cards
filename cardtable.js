@@ -49,6 +49,14 @@
 const default_deck_size = 52;
 
 function make_words(x) {
+	if (typeof(x) === "string")
+	{
+		if (x.substr(0, 2) != "0x")
+			x = "0x" + x;
+		x = BigInt(x);
+		return words.bigint2words(BigInt(x));
+	}
+
 	return x.map(i => words.bigint2words(BigInt(i), 4));
 }
 function peername(status) { return words.bigint2words(BigInt(status.peer.id)) }
@@ -260,7 +268,7 @@ encrypt_msg(status, msg)
 	});
 }
 
-draw_card(index=null)
+draw_card(dest=this.player)
 {
 	if (!this.ready)
 	{
@@ -269,18 +277,13 @@ draw_card(index=null)
 	}
 
 	let card;
-	if (index === null)
+
+	for(let i = 0 ; i < this.deck_size ; i++)
 	{
-		for(let i = 0 ; i < this.deck_size ; i++)
-		{
-			if (this.deck[i].player != null)
-				continue;
-			index = i;
-			card = this.deck[i];
-			break;
-		}
-	} else {
+		if (this.deck[i].player != null)
+			continue;
 		card = this.deck[i];
+		break;
 	}
 
 	if (!card)
@@ -292,15 +295,20 @@ draw_card(index=null)
 	if (card.player)
 		console.log("attempting to play an already drawn card", card);
 
-	card.player = this.player;
+	card.player = dest;
 
 	// remove our own encryption key
-	card.encrypted = card.sra.decrypt(card.encrypted);
-	card.encrypts--;
+	// from our copy (not sent out by default)
+	if (dest == this.player)
+	{
+		card.encrypted = card.sra.decrypt(card.encrypted);
+		card.encrypts--;
+		card.hashes[dest] = 0;
+	}
 
 	this.channel.emit('draw', {
-		index: index,
-		dest: this.player,
+		index: card.index,
+		dest: dest,
 	});
 }
 
@@ -308,12 +316,8 @@ draw_msg(status,msg)
 {
 	console.log("DRAW", status.peer.name, msg.index);
 
-	// ignore draw messages to ourselves (so that we don't reveal our key)
-	if (msg.dest == this.player)
-		return;
-
 	let card = this.deck[msg.index];
-	if (card.player)
+	if (card.player && status.peer.id != this.player)
 	{
 		console.log("already drawn!", card);
 		return;
@@ -322,21 +326,26 @@ draw_msg(status,msg)
 	// assign this card to the other player (or table or stack, etc)
 	card.player = msg.dest;
 
-	// and reveal our per-card key for this one
-	this.channel.emit('decrypt', {
-		index: msg.index,
-		key: card.sra.d.toString(16),
-	});
+	// and reveal our per-card key for this one, if we are not the destination
+	if (msg.dest != this.player)
+		this.channel.emit('decrypt', {
+			index: msg.index,
+			key: card.sra.d.toString(16),
+		});
 }
 
 decrypt_msg(status,msg)
 {
 	console.log("DECRYPT", status.peer.name, msg.index);
-	let card = this.deck[msg.index];
+	const card = this.deck[msg.index];
+	const player = status.peer.id;
+
+	if (card.hashes[player] == 0)
+		return;
 
 	// validate that the hash matches the one from this peer
 	let hash = sha256hex(msg.key);
-	if (hash != card.hashes[status.peer.id])
+	if (hash != card.hashes[player])
 	{
 		console.log("BAD HASH", status.peer.name, hash, card);
 		return;
@@ -346,14 +355,38 @@ decrypt_msg(status,msg)
 	card.encrypted = sra.modExp(card.encrypted, msg.key, card.sra.p);
 
 	// remove it from the hash to avoid double decryption
-	card.hashes[status.peer.id] = "USED";
+	card.hashes[player] = 0;
 
 	if (--card.encrypts > 0)
 		return;
 
 	// final version of the card is ours!
 	// todo: verify that this exists in the initial deck
-	console.log("CARD", card);
+	card.value = BigInt("0x" + card.encrypted) & 0xFFFFFFFFFFFFFFFFn;
+
+	let dest = (card.player.substr(0,2) == "0x" ? make_words(card.player) : card.player);
+		
+	console.log("CARD", dest, card.value);
+}
+
+reveal(card)
+{
+	// show the world what we have
+	if (card.player != this.player)
+	{
+		console.log("Not our card?", card);
+		return;
+	}
+	if (card.encrypts != 0)
+	{
+		console.log("Card is not known to us?", card);
+		return;
+	}
+
+	this.channel.emit('decrypt', {
+		index: card.index,
+		key: card.sra.d.toString(16),
+	});
 }
 
 }
