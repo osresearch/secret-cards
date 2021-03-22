@@ -40,7 +40,7 @@ app.use(express.static('.'));
 
 io.on('connection', (socket) => {
 	console.log('connected', socket.handshake.address);
-	socket.on('disconnect', () => peer_disconnect(socket))
+	socket.on('disconnect', () => peer_disconnect(socket, true))
 	socket.on('register', (msg) => peer_register(socket, msg));
 
 	// broadcast all incoming messages from any peer.
@@ -102,6 +102,9 @@ function peer_disconnect(socket,notify=true)
 
 	// if they have registered a key, tell everyone
 	// that they left, which means any in-progress games are over
-	if (notify)
-		io.emit('disconnected', id);
+	if (!notify)
+		return;
+
+	io.emit('peers', Object.values(peers));
+	console.log('peers', Object.keys(peers));
 }
