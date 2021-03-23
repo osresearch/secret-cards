@@ -16,6 +16,7 @@ const card_faces =
 "🂱🂲🂳🂴🂵🂶🂷🂸🂹🂺🂻🂽🂾"+
 "🃁🃂🃃🃄🃅🃆🃇🃈🃉🃊🃋🃍🃎"+
 "🃑🃒🃓🃔🃕🃖🃗🃘🃙🃚🃛🃝🃞";
+const card_suites = ["spades","hearts","diamonds","clubs"];
 const num_cards = card_faces.length/2; // two-byte characters
 
 form.addEventListener('submit', (e) => {
@@ -126,14 +127,22 @@ channel.update = (dest,status,msg) =>
 // called when a card is moved or learned
 cards.card_update = (card) =>
 {
-	let old = document.getElementById('card-' + card.index);
-	if (old)
-		old.remove();
+	let it = document.getElementById('card-' + card.index);
 
-	let it = document.createElement('span');
-	it.setAttribute("id", "card-" + card.index);
-	it.setAttribute("class", "card");
-	it.setAttribute("owner", card.player);
+	if (!it || it.getAttribute('owner') != card.player)
+	{
+		if (it)
+			it.remove();
+
+		it = document.createElement('span');
+		it.setAttribute("id", "card-" + card.index);
+		it.setAttribute("class", "card");
+		it.setAttribute("owner", card.player);
+
+		let player = document.getElementById("player-cards-" + card.player);
+		if (player)
+			player.appendChild(it);
+	}
 
 	if (card.value)
 	{
@@ -142,14 +151,38 @@ cards.card_update = (card) =>
 
 		it.textContent = card_faces.substr(value*2, 2);
 		it.setAttribute("value", value);
-		it.setAttribute("class", it.getAttribute("class") + ' suite-' + suite);
+		it.setAttribute("suite", card_suites[suite]);
 	} else {
 		it.textContent = card_default;
 	}
 
-	let player = document.getElementById("player-cards-" + card.player);
-	if (player)
-		player.appendChild(it);
+	if (card.player == cards.player)
+	{
+		// add a "reveal" button at the bottom of the card
+		if (!card.revealed)
+		{
+			let reveal_button = document.createElement('div');
+			reveal_button.setAttribute("class", "reveal-button");
+			reveal_button.onclick = () => {
+				card.revealed = true;
+				cards.reveal(card);
+				cards.card_update(card);
+			};
+
+			reveal_button.innerHTML = "REVEAL";
+			it.appendChild(reveal_button);
+		}
+
+		let discard_button = document.createElement('div');
+		discard_button.setAttribute("class", "discard-button");
+		discard_button.onclick = () => cards.move(card, 'discard');
+
+		discard_button.innerHTML = "DISCARD";
+		it.appendChild(discard_button);
+	}
+
+	if (card.revealed)
+		it.setAttribute("revealed", true);
 
 	return it;
 }

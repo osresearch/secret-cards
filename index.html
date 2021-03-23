@@ -23,13 +23,33 @@
 	.peer-name { color: #222; }
 	.player-name { color: #252; }
 
-.suite-0, .suite-1, .suite-2, .suite-3, .card {
+.card {
 	position: relative;
-	font-size: 32px;
+	font-size: 64px;
 }
 
-.suite-1, .suite-2 { color: red; }
-.suite-0, .suite-3 { color: blue; }
+.card[revealed] { background: #888; }
+.card[suite="hearts"], .card[suite="diamonds"] { color: red; }
+.card[suite="spades"], .card[suite="clubs"] { color: blue; }
+
+
+.reveal-button, .discard-button {
+	display: block;
+	position: absolute;
+	left: 0px;
+	width: 64px;
+	height: 32px;
+	color: #ffffff00;
+	font-size: 16px;
+}
+
+.reveal-button { top:0px; }
+.discard-button { top:40px; }
+
+.reveal-button:hover, .discard-button:hover {
+	background: #800040a0;
+	color:#000;
+}
 
     </style>
   </head>
