@@ -87,6 +87,7 @@ constructor(channel)
 	this.channel.on('encrypt', (status,msg) => this.encrypt_msg(status,msg));
 	this.channel.on('draw', (status,msg) => this.draw_msg(status,msg));
 	this.channel.on('decrypt', (status,msg) => this.decrypt_msg(status,msg));
+	this.channel.on('move', (status,msg) => this.move_msg(status,msg));
 }
 
 shuffle(num_cards=default_deck_size)
@@ -328,7 +329,7 @@ draw_msg(status,msg)
 
 	// assign this card to the other player (or table or stack, etc)
 	card.player = msg.dest;
-	this.card_move(card);
+	this.card_update(card);
 
 	// and reveal our per-card key for this one, if we are not the destination
 	if (msg.dest != this.player)
@@ -371,7 +372,7 @@ decrypt_msg(status,msg)
 	let dest = (card.player.substr(0,2) == "0x" ? make_words(card.player) : card.player);
 		
 	console.log("CARD", dest, card.value);
-	this.card_value(card);
+	this.card_update(card);
 }
 
 reveal(card)
@@ -394,10 +395,40 @@ reveal(card)
 	});
 }
 
+move(card, dest)
+{
+	// only move cards that are in the deck on in the player's hand
+	if (card.player && card.player != this.player)
+	{
+		console.log("Not our card");
+		return;
+	}
+
+	this.channel.emit('move', {
+		index: card.index,
+		dest: dest,
+	});
+}
+
+// todo: there might be a case for a player to be able to choose
+// another player's card to discard.
+move_msg(status, msg)
+{
+	const card = this.deck[msg.index];
+	if (card.player && card.player != status.peer.id)
+	{
+		console.log("Not their card");
+		return;
+	}
+
+	card.player = msg.dest;
+	this.card_update(card);
+}
+
+
 
 // callbacks for the gui
-card_value(card) {}
-card_move(card) {}
+card_update(card) {}
 
 }
 

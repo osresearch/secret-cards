@@ -123,8 +123,8 @@ channel.update = (dest,status,msg) =>
 }
 
 
-// called when a card is moved
-cards.card_move = (card) =>
+// called when a card is moved or learned
+cards.card_update = (card) =>
 {
 	let old = document.getElementById('card-' + card.index);
 	if (old)
@@ -134,25 +134,22 @@ cards.card_move = (card) =>
 	it.setAttribute("id", "card-" + card.index);
 	it.setAttribute("class", "card");
 	it.setAttribute("owner", card.player);
-	it.textContent = card_default;
+
+	if (card.value)
+	{
+		let value = Number(card.value);
+		let suite = Math.floor(value / 13);
+
+		it.textContent = card_faces.substr(value*2, 2);
+		it.setAttribute("value", value);
+		it.setAttribute("class", it.getAttribute("class") + ' suite-' + suite);
+	} else {
+		it.textContent = card_default;
+	}
 
 	let player = document.getElementById("player-cards-" + card.player);
-	player.appendChild(it);
+	if (player)
+		player.appendChild(it);
 
 	return it;
-}
-
-// called when a new card is learned
-cards.card_value = (card) =>
-{
-	let it = document.getElementById("card-" + card.index);
-	if (!it)
-		it = cards.card_move(card);
-
-	let value = Number(card.value);
-	let suite = Math.floor(value / 13);
-
-	it.textContent = card_faces.substr(value*2, 2);
-	it.setAttribute("value", value);
-	it.setAttribute("class", it.getAttribute("class") + ' suite-' + suite);
 }
