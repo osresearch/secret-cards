@@ -138,6 +138,22 @@ class SecureChannel
 		});
 		//console.log("signed=", signed_msg);
 
+		// check sequence number first, since otherwise there is a
+		// possibility that the verifications will complete out of order.
+		// trust on first use for sequence number,
+		// otherwise require an exact match for the expected value
+		// TODO: update seq after verification, since otherwise
+		// an attacker could send a spoofed message with a bad sequence number
+		// and ruin the rest of the messages
+		if (peer.seq < 0 || msg.seq == peer.seq + 1)
+		{
+			status.seq = true;
+			peer.seq = msg.seq; // bad bad bad
+		} else {
+			console.log("SEQ MISMATCH", peer.name, "expected=" + (peer.seq + 1), "seq=" + msg.seq, msg);
+			status.seq = false;
+		}
+
 		return window.crypto.subtle.verify(
 			this.key_param,
 			peer.key,
@@ -147,21 +163,11 @@ class SecureChannel
 			// store the 
 			status.sig = valid;
 
-			// trust on first use for sequence number,
-			// otherwise require an exact match for the expected value
-			if (peer.seq < 0 || msg.seq == peer.seq + 1)
-			{
-				status.seq = true;
-			} else {
-				console.log("SEQ MISMATCH", peer.name, "expected=" + (peer.seq + 1), "seq=" + msg.seq, msg);
-				valid = false;
-			}
-
-			if (valid)
+			if (valid && status.seq)
 			{
 				// seq, sig, and key all match
 				status.valid = true;
-				peer.seq = msg.seq;
+				//peer.seq = msg.seq;  // expected seq was already updated
 			} else {
 				// something didn't match
 				peer.cheats++;
