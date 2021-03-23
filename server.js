@@ -6,6 +6,7 @@
  * any secrets and is not able to influence the game play.
  * The server only relays all messages between clients; it does not
  * attempt to validate anything (right now).
+ * It is also not trusted by the players.
  *
  * See SRA84 for the initial protocol, and the README.md for the
  * extensions to make it work without revealing all the cards,
@@ -15,14 +16,6 @@
  * which are then re-broadcast as the peer array.  The server
  * does not interpret them at all.
  *
- * Initially all the cards are "face up", which allows the peers
- * to agree on the number and contents.  A peer can propose a
- * shuffling of a subset of the cards, along with the set of
- * peers to play the game.
- *
- * (This can be done at any time as well with partial decks,
- * to allow remixing of things, etc, although reshuffling face up
- * and facedown cards needs to be worked out)
  */
 const express = require('express');
 const app = express();
@@ -48,8 +41,13 @@ io.on('connection', (socket) => {
 	for(let topic of ["chat", "shuffle", "draw", "encrypt", "decrypt", "reveal", "move"])
 	{
 		socket.on(topic, (msg) => {
-			console.log(socket.name + "." + msg.seq + ": " + topic + "=", msg.msg);
-			io.emit(topic, msg);
+			// if there is no room yet, then do not allow any messages
+			const room = socket.room
+			if (!room)
+				return;
+
+			console.log(room + ": " + socket.name + "." + msg.seq + ": " + topic + "=", msg.msg);
+			io.to(room).emit(topic, msg);
 		});
 	}
 });
@@ -74,20 +72,39 @@ function jwk2id(jwk)
  * The msg should be a fully formed JWK signing key so that the other peers
  * can validate the messages from this peer.
  */
-function peer_register(socket, jwk)
+function peer_register(socket, msg)
 {
-	let id = jwk2id(jwk);
+	let id = jwk2id(msg.jwk);
 	let name = words("0x" + id);
+
+	// sanitize the room name to only be normal characters
+	const room = msg.room;
+	if ((/[^-\w]/.test(room))) {
+		console.log(name + ": invalid room name", room);
+		return;
+	}
+
 	if (socket.key)
-		peer_disconnect(socket, false);
+	{
+		// disconnect the old key (and update the room if
+		// the room has changed)
+		peer_disconnect(socket, room != socket.room);
+	}
 
-	socket.key = jwk;
+	socket.join(room);
+	socket.room = room;
 	socket.name = name;
-	peers[name] = jwk;
-	console.log('register', name);
+	socket.key = msg.jwk;
 
-	io.emit('peers', Object.values(peers));
-	console.log('peers', Object.keys(peers));
+	if (!(room in peers))
+		peers[room] = {};
+
+	peers[room][name] = msg.jwk;
+
+	console.log(room + ': register', name);
+
+	io.to(room).emit('peers', Object.values(peers[room]));
+	console.log(room + ': peers', Object.keys(peers[room]));
 }
 
 function peer_disconnect(socket,notify=true)
@@ -95,16 +112,24 @@ function peer_disconnect(socket,notify=true)
 	if (!socket.key)
 		return;
 
+	let room = socket.room;
 	let id = jwk2id(socket.key);
 	let name = words("0x" + id);
-	console.log('disconnect', name);
-	delete peers[name];
+	console.log(room + ': disconnect', name);
+	delete peers[room][name];
 
-	// if they have registered a key, tell everyone
-	// that they left, which means any in-progress games are over
+	// if there is no one left in this room, delete it
+	if (Object.keys(peers[room]).length == 0)
+	{
+		console.log(room + ": last one out turn out the lights");
+		delete peers[room];
+		return;
+	}
+
+	// if they have registered a new key, tell everyone in the old room
 	if (!notify)
 		return;
 
-	io.emit('peers', Object.values(peers));
-	console.log('peers', Object.keys(peers));
+	io.to(room).emit('peers', Object.values(peers[room]));
+	console.log(room + ': peers', Object.keys(peers[room]));
 }

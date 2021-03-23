@@ -39,7 +39,17 @@ class SecureChannel
 {
 	constructor()
 	{
+		let url = new URL(document.location);
+		let room = url.searchParams.get('room');
+		if (!room)
+		{
+			room = words.bigint2words(utils.randomBigint(32));
+			document.location.replace('?room=' + room);
+			return;
+		}
+
 		this.socket = io();
+		this.room = room;
 		this.private_key = null;
 		this.public_key = null;
 		this.public_name = null;
@@ -199,7 +209,10 @@ class SecureChannel
 		}).then((jwk) => {
 			this.public_key = jwk;
 			this.public_name = jwk2id(jwk);
-			this.socket.emit('register', jwk);
+			this.socket.emit('register', {
+				room: this.room,
+				jwk: jwk,
+			});
 		});
 	}
 
