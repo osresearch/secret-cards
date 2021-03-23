@@ -94,7 +94,7 @@ channel.peer_remove = (peer) =>
 	{
 		console.log("GAME OVER! Player disconnected", peer.name);
 		cards.ready = false;
-		document.getElementById("draw-button").setAttribute("disabled");
+		document.getElementById("draw-button").setAttribute("disabled", true);
 	}
 
 	document.getElementById('peer-count').textContent = channel.peers.length;
@@ -114,9 +114,12 @@ channel.update = (dest,status,msg) =>
 	seq.textContent = msg.seq + ' ';
 
 	if (cards.ready)
+	{
 		document.getElementById("draw-button").removeAttribute("disabled");
-	if (dest === "shuffle")
+	} else {
+		document.getElementById("draw-button").setAttribute("disabled", true);
 		document.querySelectorAll(".card").forEach(it => it.remove());	
+	}
 }
 
 

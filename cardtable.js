@@ -101,6 +101,7 @@ shuffle(num_cards=default_deck_size)
 
 	// hack to set our name
 	this.player = this.channel.public_name;
+	this.ready = false;
 
 	console.log("Starting shuffle operation...", make_words(this.order));
 
@@ -113,6 +114,9 @@ shuffle(num_cards=default_deck_size)
 
 shuffle_msg(status, msg)
 {
+	// cancel any ongoing game
+	this.ready = false;
+
 	if (msg.pass == 0)
 	{
 		console.log("NEW DECK", status.peer.name, msg.deck.length);
@@ -128,7 +132,6 @@ shuffle_msg(status, msg)
 		this.player = this.channel.public_name;
 	
 		// store the deck of clear cards
-		this.ready = false;
 		this.cards = msg.deck;
 		this.deck_size = msg.deck.length;
 
