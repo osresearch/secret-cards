@@ -94,6 +94,7 @@ channel.peer_remove = (peer) =>
 	{
 		console.log("GAME OVER! Player disconnected", peer.name);
 		cards.ready = false;
+		document.getElementById("draw-button").setAttribute("disabled");
 	}
 
 	document.getElementById('peer-count').textContent = channel.peers.length;
@@ -111,6 +112,11 @@ channel.update = (dest,status,msg) =>
 		seq.setAttribute("cheater", true);
 
 	seq.textContent = msg.seq + ' ';
+
+	if (cards.ready)
+		document.getElementById("draw-button").removeAttribute("disabled");
+	if (dest === "shuffle")
+		document.querySelectorAll(".card").forEach(it => it.remove());	
 }
 
 
@@ -145,5 +151,5 @@ cards.card_value = (card) =>
 
 	it.textContent = card_faces.substr(value*2, 2);
 	it.setAttribute("value", value);
-	it.setAttribute('class', 'suite-' + suite);
+	it.setAttribute("class", it.getAttribute("class") + ' suite-' + suite);
 }

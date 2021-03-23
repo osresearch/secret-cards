@@ -92,6 +92,8 @@ class SecureChannel
 	{
 		this.socket.on(dest, (msg) =>
 			this.validate_message(msg).then((status) => {
+				console.log(status.peer.name + "." + msg.seq + ": " + dest, (status.valid ? "" : status));
+
 				if (!status.valid)
 					console.log("ERRROR", status, msg);
 				else
@@ -151,7 +153,7 @@ class SecureChannel
 			{
 				status.seq = true;
 			} else {
-				console.log("SEQ MISMATCH", peer.seq + 1, msg);
+				console.log("SEQ MISMATCH", peer.name, "expected=" + (peer.seq + 1), "seq=" + msg.seq, msg);
 				valid = false;
 			}
 
