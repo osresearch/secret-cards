@@ -193,11 +193,11 @@ class SecureChannel
 		if (this.public_key)
 		{
 			console.log("RECONNECTED");
-			this.socket.emit('register', this.public_key);
-			return;
+			return this.register();
 		}
 
 		console.log("FIRST CONNECT");
+
 		window.crypto.subtle.generateKey(
 			this.key_param,
 			true,
@@ -209,10 +209,15 @@ class SecureChannel
 		}).then((jwk) => {
 			this.public_key = jwk;
 			this.public_name = jwk2id(jwk);
-			this.socket.emit('register', {
-				room: this.room,
-				jwk: jwk,
-			});
+			this.register();
+		});
+	}
+
+	register()
+	{
+		this.socket.emit('register', {
+			room: this.room,
+			jwk: this.public_key,
 		});
 	}
 
