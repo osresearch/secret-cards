@@ -66,8 +66,8 @@ io.on('connection', (socket) => {
 	}
 });
 
-http.listen(4423, () => {
-	console.log('listening on *:4423');
+http.listen(process.env.PORT || 4423, () => {
+	console.log('listening');
 });
 
 /*
