@@ -33,14 +33,26 @@ app.use(express.static('.'));
 
 io.on('connection', (socket) => {
 	console.log('connected', socket.handshake.address);
-	socket.on('disconnect', () => peer_disconnect(socket, true))
-	socket.on('register', (msg) => peer_register(socket, msg));
+	socket.on('disconnect', () => {
+		try {
+			peer_disconnect(socket, true);
+		} catch (err) {
+			console.log(socket.handshake.address, "disconnect", err);
+		}
+	});
+	socket.on('register', (msg) => {
+		try {
+			peer_register(socket, msg);
+		} catch (err) {
+			console.log(socket.handshake.address, "register", err);
+		}
+	});
 
 	// broadcast all incoming messages from any peer.
 	// ignore the signature; that is for others to verify
 	for(let topic of ["chat", "shuffle", "draw", "encrypt", "decrypt", "reveal", "move"])
 	{
-		socket.on(topic, (msg) => {
+		socket.on(topic, (msg) => { try {
 			// if there is no room yet, then do not allow any messages
 			const room = socket.room
 			if (!room)
@@ -48,7 +60,9 @@ io.on('connection', (socket) => {
 
 			console.log(room + ": " + socket.name + "." + msg.seq + ": " + topic + "=", msg.msg);
 			io.to(room).emit(topic, msg);
-		});
+		} catch(err) {
+			console.log(socket.handshake.address, topic, err);
+		}});
 	}
 });
 
