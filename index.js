@@ -4,6 +4,9 @@
 let channel = new SecureChannel();
 let cards = new CardTable(channel);
 
+// fixup the game room link
+document.getElementById("game-link").innerText = document.location;
+
 // Setup the chat box to talk to our peers
 let messages = document.getElementById('messages');
 let form = document.getElementById('form');
@@ -35,6 +38,18 @@ function removeElement(id)
 		it.remove();
 }
 
+function gui_enable()
+{
+	if (Object.keys(channel.peers).length > 1)
+	{
+		document.getElementById('gui').setAttribute('style', 'display: block');
+		document.getElementById('instructions').setAttribute('style', 'display: none');
+	} else {
+		document.getElementById('gui').setAttribute('style', 'display: none');
+		document.getElementById('instructions').setAttribute('style', 'display: block');
+	}
+}
+
 // when a peer sends a chat message, the secure channel
 // wil validate the signature.  we display it either way,
 // with an error if the peer is unknown, out of sequence or bad signature
@@ -53,6 +68,9 @@ channel.on('chat', (status,msg) => {
 
 channel.peer_new = (peer) =>
 {
+	// once we have more than ourselves, make sure the GUI is visible
+	gui_enable();
+
 	let peer_list = document.getElementById('peers');
 	if (!peer_list)
 		return;
@@ -87,6 +105,8 @@ channel.peer_new = (peer) =>
 
 channel.peer_remove = (peer) =>
 {
+	gui_enable();
+
 	let it = document.getElementById("peer-" + peer.id);
 	if (it)
 		it.remove();

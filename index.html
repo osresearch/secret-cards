@@ -73,6 +73,70 @@
     </style>
   </head>
   <body>
+<div id="instructions">
+<h1>
+<span class="card" suite="spades">🂡</span>
+<span class="card" suite="hearts">🂱</span>
+secret.cards
+<span class="card" suite="diamonds">🃁</span>
+<span class="card" suite="clubs">🃑</span>
+</h1>
+<p>
+secret.cards lets mutually untrusting parties play many card games without
+a trusted central server or dealer;
+To start playing, send the other players this link to join you in the game room:
+<center><a href="" id="game-link"><b>this url</b></a></center>
+<p>
+The ideal was inspired by 
+<a href="http://web.mit.edu/jemorris/humor/alice-and-bob">John Gordon's <i>After Dinner Speech</i> at The Zurich Seminar (April 1984)</a> about the famous cryptographers, Alice and Bob:
+<blockquote>
+Alice and Bob have been used to illustrate all sorts of protocols and
+bits of coding theory in scientific papers. Over the years Alice and Bob
+have tried to defraud insurance companies, they've exchanged secret messages
+over a tapped line, and <b>they've played poker for high stakes by mail</b>.
+<br/>
+Alice and Bob have very powerful enemies
+with almost unlimited resources who always listen in
+to telephone conversations between Alice and Bob.
+And these enemies are very sneaky. One of their favourite tricks is
+to telephone Alice and pretend to be Bob.
+Since Alice has never met Bob, so she has no idea what his voice sounds like.
+Oh yes, and Alice doesn't trust Bob.
+<br/>
+All in all Alice has a whole bunch of problems.
+Now most people in Alice's position would give up.
+Not Alice.She has courage which can only be described as awesome.
+<br/>
+Against all odds, over a noisy telephone line, tapped by the tax
+authorities and the secret police, Alice will happily attempt, with
+someone she doesn't trust, whom she can't hear clearly, and who is
+probably someone else, to fiddle her tax return and to organise a
+cout d'etat, while at the same time minimising the cost of the phone call.
+</blockquote>
+<p>
+
+In secret.cards, the players use commutative cryptography
+based on <a href="https://people.csail.mit.edu/rivest/pubs/SRA81.pdf">SRA81</a>
+to collaboratively shuffle a deck of cards such that none of them can influence
+the ordering, and to draw a unique card from the deck without revealing it to
+any other player.  These conditions hold as long as there is <b>at least one</b> honest
+player -- the rest of them can collude without being able to violate the integrity
+of the game.
+<p>
+There is a server used to connect the players, but it does not validate any of
+the messages and is not trusted by any of the players.  The players sign their
+sequenced messages with ephemeral public keys, and the other players validate the 
+messages with these keys.  They can detect modified, dropped, and replayed messages, 
+and since the keys are generated per game, they can't be replayed from other games.
+
+<p>
+<span class="card">🂠</span><br/>
+<tt>2<sup>521</sup>&nbsp;-&nbsp;1&nbsp;=
+6864797660130609714981900799081393217269435300143305409394463459185543183397656052122559640661454554977296311391480858037121987999716643812574028291115057151
+</tt>
+<p>
+</div>
+<div id="gui" style="display:none;">
     <button onclick="cards.shuffle()">Shuffle</button>
     <button onclick="cards.draw_card()" disabled id="draw-button">Draw Card</button>
 
@@ -86,8 +150,8 @@
     <form id="form" action="">
       <input id="input" autocomplete="off" /><button>Send</button>
     </form>
+</div>
   </body>
-
 
 <img
 	src="images/mersenne.jpg"
@@ -95,12 +159,6 @@
 	width="15%"
 	id="logo"
 />
-<!--
-<tt style="vertical-align: bottom;">
-2<sup>521</sup>&nbsp;-&nbsp;1&nbsp;=
-6,&ZeroWidthSpace;864,&ZeroWidthSpace;797,&ZeroWidthSpace;660,&ZeroWidthSpace;130,&ZeroWidthSpace;609,&ZeroWidthSpace;714,&ZeroWidthSpace;981,&ZeroWidthSpace;900,&ZeroWidthSpace;799,&ZeroWidthSpace;081,&ZeroWidthSpace;393,&ZeroWidthSpace;217,&ZeroWidthSpace;269,&ZeroWidthSpace;435,&ZeroWidthSpace;300,&ZeroWidthSpace;143,&ZeroWidthSpace;305,&ZeroWidthSpace;409,&ZeroWidthSpace;394,&ZeroWidthSpace;463,&ZeroWidthSpace;459,&ZeroWidthSpace;185,&ZeroWidthSpace;543,&ZeroWidthSpace;183,&ZeroWidthSpace;397,&ZeroWidthSpace;656,&ZeroWidthSpace;052,&ZeroWidthSpace;122,&ZeroWidthSpace;559,&ZeroWidthSpace;640,&ZeroWidthSpace;661,&ZeroWidthSpace;454,&ZeroWidthSpace;554,&ZeroWidthSpace;977,&ZeroWidthSpace;296,&ZeroWidthSpace;311,&ZeroWidthSpace;391,&ZeroWidthSpace;480,&ZeroWidthSpace;858,&ZeroWidthSpace;037,&ZeroWidthSpace;121,&ZeroWidthSpace;987,&ZeroWidthSpace;999,&ZeroWidthSpace;716,&ZeroWidthSpace;643,&ZeroWidthSpace;812,&ZeroWidthSpace;574,&ZeroWidthSpace;028,&ZeroWidthSpace;291,&ZeroWidthSpace;115,&ZeroWidthSpace;057,&ZeroWidthSpace;151
-</tt>
--->
 
     <script src="/socket.io/socket.io.js"></script>
     <script src="sha256.js"></script>
