@@ -37,7 +37,7 @@ function getEncoding(msg)
 
 class SecureChannel
 {
-	constructor()
+	constructor(host=document.location)
 	{
 		let url = new URL(document.location);
 		let room = url.searchParams.get('room');
@@ -48,7 +48,7 @@ class SecureChannel
 			return;
 		}
 
-		this.socket = io();
+		this.socket = io(host, { transports: ["websocket"] });
 		this.room = room;
 		this.private_key = null;
 		this.public_key = null;

@@ -1,7 +1,7 @@
 "use strict"
 
 // Create a secure channel to communicate with our peers
-let channel = new SecureChannel();
+let channel = new SecureChannel("https://secret-cards.herokuapp.com/");
 let cards = new CardTable(channel);
 
 // fixup the game room link

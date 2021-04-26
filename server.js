@@ -20,7 +20,12 @@
 const express = require('express');
 const app = express();
 const http = require('http').createServer(app);
-const io = require('socket.io')(http);
+const io = require('socket.io')(http, {
+	cors: {
+		origin: [ "https://secret.cards", "http://localhost:4443" ],
+		methods: ["GET", "POST"],
+	},
+});
 const sha256 = require('./sha256').sha256hex;
 const words = require('./words').bigint2words;
 
