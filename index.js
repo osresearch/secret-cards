@@ -57,9 +57,9 @@ channel.on('chat', (status,msg) => {
 	var item = document.createElement('li');
 	if (!status.valid)
 	{
-		item.textContent = '❌ ' + peer.name + ": " + msg + " " + status;
+		item.textContent = '❌ ' + status.peer.name + ": " + msg + " " + status;
 	} else {
-		item.textContent = '✓ ' + peer.name + ": " + msg;
+		item.textContent = '✓ ' + status.peer.name + ": " + msg;
 	}
 
 	messages.appendChild(item);
